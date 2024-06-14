@@ -1391,7 +1391,7 @@ def plugin_prefs(parent: Nb.Frame, cmdr: str, is_beta: bool) -> Nb.Frame:
     frame.columnconfigure(2, weight=1)
 
     HyperlinkLabel(frame, text=const.plugin_name, background=Nb.Label().cget('background'),
-                   url='https://github.com/', underline=True) \
+                   url='https://github.com/mauxion2/InaraProgress/releases', underline=True) \
         .grid(row=1, padx=x_padding, sticky=tk.W)
     Nb.Label(frame, text='Version %s' % const.plugin_version).grid(row=1, column=2, padx=x_padding, sticky=tk.E)
 
