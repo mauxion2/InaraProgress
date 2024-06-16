@@ -12,15 +12,12 @@ TODO
 
     5 trader sprzedaz commodities update_market  po typie oraz profit z miningu
 
- 
-
-
-
 
 """
 # Core imports
 import math
 import semantic_version
+import requests
 import datetime
 from typing import Any, MutableMapping, Mapping
 
@@ -108,6 +105,7 @@ class InaraProgress:
         self.parent: tk.Frame | None = None
         self.frame: tk.Frame | None = None
         self.button: ttk.Button | None = None
+        self.update_button: HyperlinkLabel | None = None
         self.show_rank: tk.BooleanVar | None = None
         self.show_combat_stats: tk.BooleanVar | None = None
         self.show_trade_stats: tk.BooleanVar | None = None
@@ -124,6 +122,7 @@ class InaraProgress:
         self.show_dh_progress: tk.BooleanVar | None = None
         self.clear_data_db: tk.BooleanVar | None = None
 
+        # Ranks
         self.combat: int = 0
         self.trade: int = 0
         self.explore: int = 0
@@ -142,6 +141,7 @@ class InaraProgress:
         self.empire_rank: int = 0
         self.federation_rank: int = 0
 
+        # Awards
         self.hunting_bonds: int = 0
         self.hunting_bonds_profit: int = 0
         self.hunting_bonds_tosell: int = 0
@@ -841,10 +841,15 @@ def update_combat_bond(entry):
 
 def update_redeem_voucher(entry):
     type_redeemrvoucher = entry["Type"]
+    if 'BrokerPercentage' in entry:  
+        corect = 0.75
+    else:
+        corect = 1    
 
     if type_redeemrvoucher == 'bounty':
         sell_bonties = entry["Amount"]
         plug.hunting_bonds_profit += sell_bonties
+        sell_bonties = sell_bonties / corect
         if plug.hunting_bonds_tosell > sell_bonties:
             plug.hunting_bonds_tosell -= sell_bonties
             plug.hunting_kill -= 1
@@ -859,6 +864,7 @@ def update_redeem_voucher(entry):
         if plug.kill_bonds_foot > 0:
             sell_bonds = entry["Amount"]
             plug.soldier_profit += sell_bonds
+            sell_bonds = sell_bonds / corect
             if sell_bonds < plug.soldier_last_sum:
                 plug.soldier_last_sum -= sell_bonds
                 plug.kill_bonds_foot -= 1
@@ -869,6 +875,7 @@ def update_redeem_voucher(entry):
         if plug.kill_bonds > 0:
             sell_bonds = entry["Amount"]
             plug.combat_profit += sell_bonds
+            sell_bonds = sell_bonds / corect
             if sell_bonds < plug.combat_last_sum:
                 plug.combat_last_sum -= sell_bonds
                 plug.kill_bonds -= 1
@@ -1011,7 +1018,6 @@ def update_mining_refined():
 
 
 def update_docked(entry):
-
     if entry["StationType"] == "FleetCarrier":
         data_db.set_docked_fleet(entry["MarketID"])
 
@@ -1553,6 +1559,28 @@ def prefs_changed(cmdr: str, is_beta: bool) -> None:
     update_display()
 
 
+def version_check() -> str:
+    """
+    Parse latest GitHub release version
+
+    :return: The latest version string if it's newer than ours
+    """
+
+    try:
+        req = requests.get(url='https://api.github.com/repos/mauxion2/InaraProgress/releases/latest')
+        data = req.json()
+        if req.status_code != requests.codes.ok:
+            raise requests.RequestException
+    except (requests.RequestException, requests.JSONDecodeError) as ex:
+        LOG.log('Failed to parse GitHub release info')
+        return ''
+
+    version = semantic_version.Version(data['tag_name'][1:])
+    if version > plug.VERSION:
+        return str(version)
+    return ''
+
+
 def validate_int(val: str) -> bool:
     if val.isdigit() or val == "":
         return True
@@ -1566,9 +1594,20 @@ def plugin_app(parent: tk.Frame) -> tk.Frame:
     if len(plug.labels) == 0:  # Initialize the UI   
         plug.frame = tk.Frame(parent)
         setup_frame_new()
-
         update_stats()
         update_display()
+        update = version_check()
+        if update != '':
+            update_frame = tk.Frame(plug.frame, borderwidth=1, relief="groove")
+            update_frame.columnconfigure(0, weight=1, uniform="r" )
+            update_frame.columnconfigure(1, weight=1, uniform="r" )
+            update_frame.grid(row=4, column=0, columnspan=2, sticky=tk.EW)
+            inara_label = tk.Label(update_frame, text="InaraProgress")
+            inara_label.grid(row=0, column=0)
+            text = f'Version {update} is now available'
+            url = f'https://github.com/mauxion2/InaraProgress/releases/tag/v{update}'
+            plug.update_button = HyperlinkLabel(update_frame, text=text, url=url)
+            plug.update_button.grid(row=0, column=1)       
     theme.update(plug.frame)
     return plug.frame
 
@@ -1646,4 +1685,3 @@ def journal_entry(cmdr: str, is_beta: bool, system: str,
             update_mission_completed(entry)
         case 'Docked':
             update_docked(entry)
-
