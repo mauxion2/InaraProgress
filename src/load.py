@@ -967,9 +967,9 @@ def update_bio_data(entry):
         value_bio += bio["Value"]
         bonus_bio += bio["Bonus"]
     plug.bio_profit += value_bio + bonus_bio
-    plug.bio_bonus -= value_bio
-    if plug.bio_bonus < 0:
-        plug.bio_bonus = 0 
+    plug.bio_sell -= value_bio
+    if plug.bio_sell < 0:
+        plug.bio_sell = 0 
     count_bio = len(bio_data_tab)
     plug.bio_find -= count_bio
     if plug.bio_find < 0:
