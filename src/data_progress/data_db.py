@@ -1,5 +1,7 @@
 
 
+import datetime
+import os
 # from typing import List
 from typing import Optional
 from sqlalchemy import Engine, create_engine, Executable, Result, MetaData  # , ForeignKey
@@ -137,6 +139,18 @@ class DockedFleet(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     market_id: Mapped[int] = mapped_column(default='0')
+
+
+class BioShell(Base):
+    __tablename__ = 'bio_shell'
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    system_id: Mapped[int] = mapped_column(default='0')
+    planet_id: Mapped[int] = mapped_column(default='0')
+    bio_codex: Mapped[str] = mapped_column(default='')
+    bio_name: Mapped[str] = mapped_column(default='')
+    bio_cost: Mapped[int] = mapped_column(default='0')
+    bio_time: Mapped[str] = mapped_column(default='')
 
 
 def run_statement(engine: Engine, statement: Executable) -> Result:
@@ -345,6 +359,21 @@ def check_system(system_address: int, system_name: str) -> bool:
     return system_check
 
 
+def name_system(system_id: int) -> str:
+    data: SystemList = this.sql_session_factory.scalar(select(SystemList).where(SystemList.system_id == system_id))
+    if not data:
+        return 'None'
+    return data.system_name
+
+
+def name_planet(system_id: int, planet_id: int) -> str:
+    data: PlanetBioSAA = this.sql_session_factory.scalar(select(PlanetBioSAA).where(PlanetBioSAA.system_id == system_id)
+                                                         .where(PlanetBioSAA.planet_id == planet_id))
+    if data:
+        return data.planet_name
+    return 'id {str(planet_id)}'
+
+
 def set_bio(system_id: int, planet_id: int, bio_codex: str, bio_name: str):
     data: BioList = this.sql_session_factory.scalar(select(BioList).where(BioList.system_id == system_id)
                                                     .where(BioList.planet_id == planet_id)
@@ -355,6 +384,15 @@ def set_bio(system_id: int, planet_id: int, bio_codex: str, bio_name: str):
         data = BioList(system_id=system_id, planet_id=planet_id, bio_codex=bio_codex, bio_name=bio_name)
         this.sql_session_factory.add(data)
         this.sql_session_factory.commit() 
+
+
+def sell_bio(system_id: int, planet_id: int, bio_codex: str, bio_name: str, bio_cost: int):
+    bio_time = datetime.datetime.now()
+    bio_time = bio_time.strftime('%Y_%m_%d_%H_%M')
+    data = BioShell(system_id=system_id, planet_id=planet_id, bio_codex=bio_codex, 
+                    bio_name=bio_name, bio_cost=bio_cost, bio_time=bio_time)
+    this.sql_session_factory.add(data)
+    this.sql_session_factory.commit() 
 
 
 def get_bio_cost(bio_codex: str) -> int: 
@@ -404,3 +442,21 @@ def get_docked_fleet(market_id: int) -> bool:
     if not data:
         find_fleet = True
     return find_fleet    
+
+
+def export_bio_lost() -> None:
+    if this.sql_session_factory.query(func.count(BioShell.id)).scalar() > 0:
+        export_path = config.app_dir_path / 'data_lost'
+        if not export_path.exists():
+            os.makedirs(export_path)
+        stamp_time = datetime.datetime.now()
+        stamp_time = stamp_time.strftime('%Y_%m_%d_%H_%M')
+        filename = 'bio_' + stamp_time + '.txt'
+        file = open(export_path / filename, 'w')
+        table = this.sql_session_factory.query(BioShell).all()
+        for data in table:
+            text_exp = '{} | Name: {} | cost: {} |'.format(data.bio_time, data.bio_name, str(data.bio_cost))
+            text_exp += ' System: {} |'.format(name_system(data.system_id))
+            text_exp += ' Planet: {}'.format(name_planet(data.system_id, data.planet_id))
+            file.write(text_exp + '\n')
+        file.close()

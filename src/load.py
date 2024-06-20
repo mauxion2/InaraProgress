@@ -8,8 +8,8 @@ Licensed under the [GNU Public License (GPL)](http://www.gnu.org/licenses/gpl-2.
 TODO
 
     2 decorated hero  value x2 x3 itp. zapis do bazy
-
-
+    3 tabla bio tmp utracone dane
+    4 sprawdzic sprzedaz jezeli sa   kill_bonds_foot i kill_bonds jednoczesnie
     5 trader sprzedaz commodities update_market  po typie oraz profit z miningu
 
 
@@ -101,7 +101,6 @@ class InaraProgress:
         self.overlay_info_x: tk.IntVar | None = None
         self.overlay_info_y: tk.IntVar | None = None   
 
-
         self.parent: tk.Frame | None = None
         self.frame: tk.Frame | None = None
         self.button: ttk.Button | None = None
@@ -189,7 +188,7 @@ class InaraProgress:
         self.trade_profit: int = 0
         self.explore_profit: int = 0
         self.bio_profit: int = 0
-        self.bio_bonus: int = 0
+        self.bio_sell: int = 0
         self.bio_find: int = 0
         self.miner_profit: int = 0
 
@@ -471,7 +470,7 @@ def update_display(overlay_info: str = "", overlay_info_change: bool = False):
         plug.labels["profit"][0]["text"] = "{:,} Cr".format(plug.trade_profit)
         plug.labels["exp_data"][0]["text"] = "{:,} Cr".format(plug.explore_profit)
         plug.labels["bio_data"][0]["text"] = "{:,} Cr".format(plug.bio_profit)
-        plug.labels["bio_bonus"][0]["text"] = "{} / {:,} Cr".format(plug.bio_find, plug.bio_bonus)
+        plug.labels["bio_bonus"][0]["text"] = "{} / {:,} Cr".format(plug.bio_find, plug.bio_sell)
 
     if plug.show_combat_stats.get():
         plug.tab_values.clear()
@@ -674,7 +673,7 @@ def update_display(overlay_info: str = "", overlay_info_change: bool = False):
     if plug.use_overlay.get() and plug.overlay.available():
     
         overlay_text = "" 
-        overlay_text += "BioData To Sell: {} / {:,} Cr \n".format(plug.bio_find, plug.bio_bonus)
+        overlay_text += "BioData To Sell: {} / {:,} Cr \n".format(plug.bio_find, plug.bio_sell)
         overlay_text += "Soldier {} / {:,} Cr\n".format(plug.kill_bonds_foot, plug.soldier_last_sum) 
         overlay_text += "Combat {} / {:,} Cr\n".format(plug.kill_bonds, plug.combat_last_sum)
         overlay_text += "Hunter {} / {:,} Cr\n".format(plug.hunting_kill, plug.hunting_bonds_tosell)
@@ -688,7 +687,6 @@ def update_display(overlay_info: str = "", overlay_info_change: bool = False):
 
             plug.overlay.draw('inaraprogress_info', overlay_info, plug.overlay_info_x.get(), 
                               plug.overlay_info_y.get(), plug.overlay_color.get(), 'large', 6)
-
 
 
 def update_progress(entry):
@@ -780,7 +778,7 @@ def update_hunter_bounty(entry):
     plug.hunting_kill += 1
 
     config_value_set()
-    update_display()
+    update_display("Hunter Kill {:,}".format(plug.hunting_kill), True)
 
 
 def update_combat_bond(entry):
@@ -844,11 +842,13 @@ def update_redeem_voucher(entry):
     if 'BrokerPercentage' in entry:  
         corect = 0.75
     else:
-        corect = 1    
+        corect = 1
 
+    overlay_text = ''
     if type_redeemrvoucher == 'bounty':
         sell_bonties = entry["Amount"]
         plug.hunting_bonds_profit += sell_bonties
+        overlay_text = "Hunting {:,} Cr".format(plug.hunting_bonds_profit)
         sell_bonties = sell_bonties / corect
         if plug.hunting_bonds_tosell > sell_bonties:
             plug.hunting_bonds_tosell -= sell_bonties
@@ -863,7 +863,10 @@ def update_redeem_voucher(entry):
         # sprawdzic sprzedaz jezeli sa   kill_bonds_foot i kill_bonds jednoczesnie
         if plug.kill_bonds_foot > 0:
             sell_bonds = entry["Amount"]
+            if plug.kill_bonds > 0:
+                sell_bonds -= plug.combat_last_sum * corect
             plug.soldier_profit += sell_bonds
+            overlay_text = "Soldier {:,} Cr".format(plug.soldier_profit)
             sell_bonds = sell_bonds / corect
             if sell_bonds < plug.soldier_last_sum:
                 plug.soldier_last_sum -= sell_bonds
@@ -874,7 +877,10 @@ def update_redeem_voucher(entry):
 
         if plug.kill_bonds > 0:
             sell_bonds = entry["Amount"]
+            if plug.kill_bonds_foot > 0:
+                sell_bonds = plug.combat_last_sum * corect
             plug.combat_profit += sell_bonds
+            overlay_text = "Combat {:,} Cr".format(plug.combat_profit)
             sell_bonds = sell_bonds / corect
             if sell_bonds < plug.combat_last_sum:
                 plug.combat_last_sum -= sell_bonds
@@ -884,7 +890,7 @@ def update_redeem_voucher(entry):
                 plug.kill_bonds = 0
 
     config_value_set()
-    update_display()
+    update_display(overlay_text, True)
 
 
 """"
@@ -915,12 +921,14 @@ def update_redeem_voucher(entry):
         "Type":"osmium", "Count":32, "SellPrice":167641, "TotalSale":5364512, "AvgPricePaid":0 }
 """
 
-def community(entry):
+
+def community(entry, count_sell):
     if entry["MarketID"] == 3228804352:
         if plug.wyd_il == 0:
             plug.wyd_il = 35695
         plug.wyd_il += count_sell
         config_wyd_set()   
+
 
 def update_market(entry, is_buy=False):
     if is_buy:
@@ -929,6 +937,7 @@ def update_market(entry, is_buy=False):
 
     else:
         if data_db.get_docked_fleet(entry["MarketID"]):
+            overlay_text = ''
             count_sell = entry["Count"]
             pr_cr = count_sell * (entry["SellPrice"] - entry["AvgPricePaid"])
             if pr_cr > 0: 
@@ -944,9 +953,10 @@ def update_market(entry, is_buy=False):
 
 
 def update_exp_data(entry):
+    # add sell system
     plug.explore_profit += entry["TotalEarnings"]
     config_trade_set()
-    update_display()
+    update_display("Explore Profit {:,}".format(plug.explore_profit), True)
 
 
 def update_bio_data(entry):
@@ -965,6 +975,10 @@ def update_bio_data(entry):
     if plug.bio_find < 0:
         plug.bio_find = 0 
     plug.exobiologist_Organic += count_bio
+
+    if plug.bio_find == 0:
+        # tabela bio tmp utracone dane
+        plug.sql_session.query(data_db.BioShell).delete()
 
     config_trade_set()
     config_value_set()
@@ -1004,11 +1018,26 @@ def update_bio_fss(entry):
 def update_bio_sample(entry):
     if "ScanType" in entry:
         if entry["ScanType"] == "Analyse":
-            data_db.set_bio(entry["SystemAddress"], entry["Body"], entry["Species"], entry["Species_Localised"])
-            plug.bio_bonus += data_db.get_bio_cost(entry["Species"])
+            system_id = entry["SystemAddress"]
+            planet_id = entry["Body"]
+            bio_codex = entry["Species"]
+            bio_name = entry["Species_Localised"]
+            bio_cost = data_db.get_bio_cost(bio_codex)
+            data_db.set_bio(system_id, planet_id, bio_codex, bio_name)
+            data_db.sell_bio(system_id, planet_id, bio_codex, bio_name, bio_cost)
+
+            plug.bio_sell += bio_cost
             plug.bio_find += 1
             config_value_set()
             update_display()
+
+
+def update_died():
+    if plug.bio_find > 0:
+        data_db.export_bio_lost()
+        plug.sql_session.query(data_db.BioShell).delete()
+        plug.bio_find = 0
+        plug.bio_bonus = 0
 
 
 def update_mining_refined():
@@ -1059,9 +1088,14 @@ def update_mission_completed(entry):
         passenger_count = data_db.get_passenger_count(mission_id)
         if data_db.get_vip(mission_id):
             plug.passengers_VIP += passenger_count
+            overlay_text = "Passengers VIP {:,}".format(plug.passengers_VIP)  
         else:
             plug.passengers_Delivered += passenger_count
+            overlay_text = "Passengers Delivered {:,}".format(plug.passengers_Delivered)  
         data_db.finish_mission(mission_id) 
+        
+        config_value_set()
+        update_display(overlay_text, True)    
 
 
 """
@@ -1096,6 +1130,8 @@ def update_rescue(entry):
     plug.rescue_Traded += entry["Count"]
     plug.trade_profit += entry["Reward"]
     plug.trading_Markets += data_db.set_market(entry["MarketID"], 'rescue')
+    config_value_set()
+    update_display("Rescue {:,}".format(plug.rescue_Traded), True)    
 
 
 def update_statistics_tab(entry):
@@ -1190,7 +1226,7 @@ def parse_config() -> None:
     plug.overlay_anchor_x = tk.IntVar(value=config.get_int(key='InaraProgress_overlay_anchor_x', default=1040))
     plug.overlay_anchor_y = tk.IntVar(value=config.get_int(key='InaraProgress_overlay_anchor_y', default=0))
     plug.overlay_info_x = tk.IntVar(value=config.get_int(key='InaraProgress_overlay_info_x', default=500))
-    plug.overlay_info_y = tk.IntVar(value=config.get_int(key='InaraProgress_overlay_info_y', default=290))    
+    plug.overlay_info_y = tk.IntVar(value=config.get_int(key='InaraProgress_overlay_info_y', default=160))    
 
     plug.clear_data_db = tk.BooleanVar(value=config.get_bool(key='InaraProgress_clear_data_db', default=False))
 
@@ -1260,7 +1296,7 @@ def parse_config_value() -> None:
     plug.trade_profit = data_db.get_setting('InaraProgress_trade_profit')
     plug.explore_profit = data_db.get_setting('InaraProgress_explore_profit')
     plug.bio_profit = data_db.get_setting('InaraProgress_bio_profit')
-    plug.bio_bonus = data_db.get_setting('InaraProgress_bio_bonus')
+    plug.bio_sell = data_db.get_setting('InaraProgress_bio_bonus')
     plug.bio_find = data_db.get_setting('InaraProgress_bio_find') 
     plug.miner_profit = data_db.get_setting('InaraProgress_miner_profit')
 
@@ -1329,7 +1365,7 @@ def config_value_set() -> None:
     data_db.set_setting('InaraProgress_thargoid_scout', plug.thargoid_scout)
     data_db.set_setting('InaraProgress_thargoid_hunter', plug.thargoid_hunter)
 
-    data_db.set_setting("InaraProgress_bio_bonus", plug.bio_bonus)
+    data_db.set_setting("InaraProgress_bio_bonus", plug.bio_sell)
     data_db.set_setting("InaraProgress_bio_find", plug.bio_find)
 
 
@@ -1355,6 +1391,10 @@ def journals_parse():
     parse_config_value()
     update_display()
     LOG.log('Final Parsing', 'INFO')
+
+
+def export_bio():
+    data_db.export_bio_lost()
     
 
 def plugin_start3(plugin_dir: str) -> str:
@@ -1507,9 +1547,6 @@ def plugin_prefs(parent: Nb.Frame, cmdr: str, is_beta: bool) -> Nb.Frame:
         width=8, validate='all', validatecommand=(vcmd, '%P')
     ).grid(row=1, column=4, sticky=tk.W)
 
-
-
-
     ttk.Separator(frame, orient=tk.HORIZONTAL).grid(row=55, columnspan=3, pady=y_padding * 2, sticky=tk.EW)
 
     plug.button = Nb.Button(frame, text='Journal Parsing', command=journals_parse)
@@ -1522,6 +1559,9 @@ def plugin_prefs(parent: Nb.Frame, cmdr: str, is_beta: bool) -> Nb.Frame:
         text='All Log Parsing',
         variable=plug.clear_data_db
     ).grid(row=60, column=1, padx=x_button_padding, pady=0, sticky=tk.W)
+
+    # button = Nb.Button(frame, text='Test Export', command=export_bio)
+    # button.grid(row=65, column=0, padx=x_padding, sticky=tk.SW)
 
     return frame
 
@@ -1556,7 +1596,7 @@ def prefs_changed(cmdr: str, is_beta: bool) -> None:
 
     setup_frame_new()
     update_stats()
-    update_display()
+    update_display('Test Display Positon Info', True)
 
 
 def version_check() -> str:
@@ -1571,8 +1611,8 @@ def version_check() -> str:
         data = req.json()
         if req.status_code != requests.codes.ok:
             raise requests.RequestException
-    except (requests.RequestException, requests.JSONDecodeError) as ex:
-        LOG.log('Failed to parse GitHub release info')
+    except (requests.RequestException, requests.JSONDecodeError):
+        LOG.log('Failed to parse GitHub release info', "INFO")
         return ''
 
     version = semantic_version.Version(data['tag_name'][1:])
@@ -1599,8 +1639,8 @@ def plugin_app(parent: tk.Frame) -> tk.Frame:
         update = version_check()
         if update != '':
             update_frame = tk.Frame(plug.frame, borderwidth=1, relief="groove")
-            update_frame.columnconfigure(0, weight=1, uniform="r" )
-            update_frame.columnconfigure(1, weight=1, uniform="r" )
+            update_frame.columnconfigure(0, weight=1, uniform="r")
+            update_frame.columnconfigure(1, weight=1, uniform="r")
             update_frame.grid(row=4, column=0, columnspan=2, sticky=tk.EW)
             inara_label = tk.Label(update_frame, text="InaraProgress")
             inara_label.grid(row=0, column=0)
@@ -1613,7 +1653,7 @@ def plugin_app(parent: tk.Frame) -> tk.Frame:
 
 
 def dashboard_entry(cmdr: str, is_beta: bool, entry: dict[str, any]) -> str:
-    status = StatusFlags(entry['Flags'])
+    # status = StatusFlags(entry['Flags'])
     status2 = StatusFlags2(0)
     if 'Flags2' in entry:
         status2 = StatusFlags2(entry['Flags2'])
@@ -1685,3 +1725,5 @@ def journal_entry(cmdr: str, is_beta: bool, system: str,
             update_mission_completed(entry)
         case 'Docked':
             update_docked(entry)
+        case 'Died':
+            update_died()

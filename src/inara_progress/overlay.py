@@ -89,7 +89,7 @@ class Overlay:
             logger.debug(err)
 
     def draw(self, message_id: str, text: str, x: int = 0, y: int = 0,
-                color: str = "#ffffff", size: str = "normal", ttl: float = 60) -> None:
+             color: str = "#ffffff", size: str = "normal", ttl: float = 60) -> None:
         """
         Displays text with given attributes. Only draws text once which expires after 'ttl'.
 

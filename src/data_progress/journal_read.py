@@ -379,8 +379,6 @@ def parse_journal(journal_path: Path, tg: bool) -> int:
 
 def clear_db(session1: Session):
 
-    #session1.execute(Table(table_name, metadata, autoload=True).delete())
-
     session1.query(db.JournalLog).delete()
     session1.query(db.SystemList).delete()
     session1.query(db.ThargoidList).delete()
