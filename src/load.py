@@ -1037,7 +1037,7 @@ def update_died():
         data_db.export_bio_lost()
         plug.sql_session.query(data_db.BioShell).delete()
         plug.bio_find = 0
-        plug.bio_bonus = 0
+        plug.bio_sell = 0
 
 
 def update_mining_refined():
