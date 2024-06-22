@@ -55,9 +55,7 @@ class Overlay:
 
     def disconnect(self) -> None:
         self._redraw_timer.set()
-        self._overlay.send_raw({
-            "command": "exit"
-        })
+        self._overlay.send_raw({"command": "exit"})
 
     def display(self, message_id: str, text: str, x: int = 0, y: int = 0,
                 color: str = "#ffffff", size: str = "normal") -> None:

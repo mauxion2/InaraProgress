@@ -406,6 +406,11 @@ def get_bio_cost(bio_codex: str) -> int:
     return price
 
 
+def finish_sell_bio():
+    this.sql_session_factory.query(BioShell).delete()
+    this.sql_session_factory.commit()
+    
+
 def thargoid_add(thargoid_reward: int, thargoid_name: str, thargoid_time: str):
     data = ThargoidList(thargoid_reward=thargoid_reward, thargoid_name=thargoid_name, thargoid_time=thargoid_time)
     this.sql_session_factory.add(data)

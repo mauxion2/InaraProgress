@@ -978,7 +978,7 @@ def update_bio_data(entry):
 
     if plug.bio_find == 0:
         # tabela bio tmp utracone dane
-        plug.sql_session.query(data_db.BioShell).delete()
+        data_db.finish_sell_bio()
 
     config_trade_set()
     config_value_set()
@@ -1035,9 +1035,11 @@ def update_bio_sample(entry):
 def update_died():
     if plug.bio_find > 0:
         data_db.export_bio_lost()
-        plug.sql_session.query(data_db.BioShell).delete()
+        data_db.finish_sell_bio()
         plug.bio_find = 0
         plug.bio_sell = 0
+        config_value_set()
+        update_display('Lost Bio Data - Export list to file', True)
 
 
 def update_mining_refined():
@@ -1394,7 +1396,9 @@ def journals_parse():
 
 
 def export_bio():
-    data_db.export_bio_lost()
+    # data_db.export_bio_lost()
+    update_died()
+    
     
 
 def plugin_start3(plugin_dir: str) -> str:
@@ -1505,7 +1509,7 @@ def plugin_prefs(parent: Nb.Frame, cmdr: str, is_beta: bool) -> Nb.Frame:
         text='Enable overlay',
         variable=plug.use_overlay
     ).grid(row=21, column=0, padx=x_button_padding, pady=0, sticky=tk.W)
-    color_button = Nb.ColoredButton(
+    color_button = Nb.tk.Button(
         frame,
         text='Text Color',
         foreground=plug.overlay_color.get(),
@@ -1521,13 +1525,13 @@ def plugin_prefs(parent: Nb.Frame, cmdr: str, is_beta: bool) -> Nb.Frame:
         .grid(row=0, column=0, sticky=tk.W)
     Nb.Label(anchor_frame, text='X') \
         .grid(row=0, column=1, sticky=tk.W)
-    Nb.Entry(
+    Nb.EntryMenu(
         anchor_frame, text=plug.overlay_anchor_x.get(), textvariable=plug.overlay_anchor_x,
         width=8, validate='all', validatecommand=(vcmd, '%P')
     ).grid(row=0, column=2, sticky=tk.W)
     Nb.Label(anchor_frame, text='Y') \
         .grid(row=0, column=3, sticky=tk.W)
-    Nb.Entry(
+    Nb.EntryMenu(
         anchor_frame, text=plug.overlay_anchor_y.get(), textvariable=plug.overlay_anchor_y,
         width=8, validate='all', validatecommand=(vcmd, '%P')
     ).grid(row=0, column=4, sticky=tk.W)
@@ -1536,13 +1540,13 @@ def plugin_prefs(parent: Nb.Frame, cmdr: str, is_beta: bool) -> Nb.Frame:
         .grid(row=1, column=0, sticky=tk.W)
     Nb.Label(anchor_frame, text='X') \
         .grid(row=1, column=1, sticky=tk.W)
-    Nb.Entry(
+    Nb.EntryMenu(
         anchor_frame, text=plug.overlay_info_x.get(), textvariable=plug.overlay_info_x,
         width=8, validate='all', validatecommand=(vcmd, '%P')
     ).grid(row=1, column=2, sticky=tk.W)
     Nb.Label(anchor_frame, text='Y') \
         .grid(row=1, column=3, sticky=tk.W)
-    Nb.Entry(
+    Nb.EntryMenu(
         anchor_frame, text=plug.overlay_info_y.get(), textvariable=plug.overlay_info_y,
         width=8, validate='all', validatecommand=(vcmd, '%P')
     ).grid(row=1, column=4, sticky=tk.W)
