@@ -1,7 +1,7 @@
 
 import logging
 import sys
-import os
+# import os
 from config import appname
 from inara_progress import const
 
@@ -22,7 +22,8 @@ class ProgressLog(object):
 
         if self.logger.hasHandlers():
             logger_channel = logging.StreamHandler()
-            # logger_formatter = logging.Formatter(f'%(asctime)s - %(name)s - %(levelname)s - %(module)s:%(lineno)d:%(funcName)s: %(message)s')
+            # logger_formatter = logging.Formatter(f'%(asctime)s - %(name)s -
+            # %(levelname)s - %(module)s:%(lineno)d:%(funcName)s: %(message)s')
             logger_formatter = logging.Formatter(f'%(asctime)s -  %(levelname)s - %(name)s - %(message)s')
             logger_formatter.default_time_format = '%Y-%m-%d %H:%M:%S'
             logger_formatter.default_msec_format = '%s.%03d'

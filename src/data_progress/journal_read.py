@@ -91,9 +91,8 @@ class ParseJournal:
     This class is a general purpose container to process individual journal files. It's used both by the main
     EDMC journal parser hook and by the threaded journal import function, generally called by other plugins.
     """
-    def __init__(self, tg: bool):
+    def __init__(self):
         self.session: Session = db.get_session()
-        self.thargoid_list: bool = tg
 
     def load_journal(self, journal_path: Path) -> int:
 
@@ -103,16 +102,6 @@ class ParseJournal:
             db.set_setting('InaraProgress_exploration_Jumps', 0)
             db.set_setting('InaraProgress_exploration_L3scan', 0)
             db.set_setting("InaraProgress_exobiologist_Organic", 0)
-            db.set_setting("InaraProgress_trade_profit", 0)
-
-            if self.thargoid_list:
-                db.set_setting('InaraProgress_thargoid_kill', 0)
-                db.set_setting('InaraProgress_thargoid_cyclops', 0)
-                db.set_setting('InaraProgress_thargoid_basilisk', 0)
-                db.set_setting('InaraProgress_thargoid_medusa', 0)
-                db.set_setting('InaraProgress_thargoid_hydra', 0)
-                db.set_setting('InaraProgress_thargoid_scout', 0)
-                db.set_setting('InaraProgress_thargoid_hunter', 0)
 
         found = self.session.scalar(select(db.JournalLog).where(db.JournalLog.journal == journal_path.name))
 
@@ -162,8 +151,7 @@ class ParseJournal:
                 exploration_jumps += 1
                 db.set_setting('InaraProgress_exploration_Jumps', exploration_jumps)
                 if not db.check_system(entry["SystemAddress"], entry["StarSystem"]):
-                    exploration_visited = db.get_setting('InaraProgress_exploration_Visited')
-                    exploration_visited += 1
+                    exploration_visited = db.get_system_list_count()
                     db.set_setting('InaraProgress_exploration_Visited', exploration_visited)
 
             case 'fssbodysignals':                   # saasignalsfound   fssbodysignals
@@ -188,28 +176,57 @@ class ParseJournal:
                             if localised == "Biological":
                                 if not db.check_planet_biosaa(entry["BodyID"], entry["BodyName"],
                                                               entry["SystemAddress"], sg["Count"]):
-                                    exobiologist_planets = db.get_setting('InaraProgress_exobiologist_Planets')
-                                    exobiologist_planets += 1
+                                    exobiologist_planets = db.get_planet_biosaa_count()
                                     db.set_setting("InaraProgress_exobiologist_Planets", exobiologist_planets)
 
             case 'scanorganic':
                 if entry["ScanType"] == "Analyse":
-                    db.set_bio(entry["SystemAddress"], entry["Body"], entry["Species"], entry["Species_Localised"])
-                    db.get_bio_cost(entry["Species"])
+                    system_id = entry["SystemAddress"]
+                    planet_id = entry["Body"]
+                    bio_codex = entry["Species"]
+                    bio_name = entry["Species_Localised"]
+                    if "Variant_Localised" in entry:
+                        bio_variant = entry["Variant_Localised"]
+                        bio_variant = bio_variant.replace(bio_name, "")
+                        bio_variant = bio_variant.replace(" - ", "")
+                    else:
+                        bio_variant = 'unknown'    
+                    bio_cost = db.get_bio_cost(bio_codex)
+                    db.set_bio(timestamp, system_id, planet_id, bio_codex, bio_name, bio_variant)
+                    db.set_sell_bio(timestamp, system_id, planet_id, bio_codex, bio_name, bio_variant, bio_cost)
 
             case 'sellorganicdata':                    
                 bio_data_tab = entry["BioData"]
+                bio_data_tab_len = len(bio_data_tab)
+                sell_bio_count = db.get_sell_bio_count()
                 exobiologist_organic = db.get_setting('InaraProgress_exobiologist_Organic')
-                exobiologist_organic += len(bio_data_tab)
-                db.set_setting("InaraProgress_exobiologist_Organic", exobiologist_organic)
+                exobiologist_organic += bio_data_tab_len
+                db.set_setting("InaraProgress_exobiologist_Organic", exobiologist_organic)                
+                
+                if bio_data_tab_len == sell_bio_count:
+                    db.finish_sell_bio()
+                elif (bio_data_tab_len > 0) and (bio_data_tab_len < sell_bio_count):
+                    for bio in bio_data_tab:
+                        bio_codex = bio["Species"]
+                        bio_name = bio["Species_Localised"]
+                        if "Variant_Localised" in bio:
+                            bio_variant = bio["Variant_Localised"]
+                            bio_variant = bio_variant.replace(bio_name, "")
+                            bio_variant = bio_variant.replace(" - ", "")
+                        else:
+                            bio_variant = 'unknown'    
+                        bio_cost = bio["Value"]
+                        db.delete_sell_bio(bio_codex, bio_name, bio_variant, bio_cost)
+
+            case 'died':
+                if db.get_sell_bio_count() > 0:
+                    db.export_bio_lost(time_event)
+                    db.finish_sell_bio()    
 
             case 'factionkillbond':
                 if 'VictimFaction_Localised' in entry:
                     targ = entry["VictimFaction_Localised"]
-                    if targ == 'Thargoids' and self.thargoid_list:
-                        thargoid_kill = db.get_setting('InaraProgress_thargoid_kill')
-                        thargoid_kill += 1
-                        db.set_setting('InaraProgress_thargoid_kill', thargoid_kill)
+                    if targ == 'Thargoids':
                         reward = entry["Reward"]
 
                         time_patch_18_06 = datetime.datetime(2024, 5, 28, 8, 0, 0)
@@ -219,33 +236,18 @@ class ParseJournal:
                         if time_patch_14_02 > time_event:
 
                             if reward == _SCOUT_TARG:
-                                thargoid_scout = db.get_setting('InaraProgress_thargoid_scout')
-                                thargoid_scout += 1
-                                db.set_setting('InaraProgress_thargoid_scout', thargoid_scout)
                                 targ_name = 'Scout'
 
                             if reward == _CYCLOPS_TARG:
-                                thargoid_cyclops = db.get_setting('InaraProgress_thargoid_cyclops')
-                                thargoid_cyclops += 1
-                                db.set_setting('InaraProgress_thargoid_cyclops', thargoid_cyclops)
                                 targ_name = 'Cyclops'
 
                             if reward == _BASILISK_TARG:
-                                thargoid_basilisk = db.get_setting('InaraProgress_thargoid_basilisk')
-                                thargoid_basilisk += 1
-                                db.set_setting('InaraProgress_thargoid_basilisk', thargoid_basilisk)
                                 targ_name = 'Basilisk'
 
                             if reward == _MEDUSA_TARG:
-                                thargoid_medusa = db.get_setting('InaraProgress_thargoid_medusa')
-                                thargoid_medusa += 1
-                                db.set_setting('InaraProgress_thargoid_medusa', thargoid_medusa)
                                 targ_name = 'Medusa'
 
                             if reward == _HYDRA_TARG:
-                                thargoid_hydra = db.get_setting('InaraProgress_thargoid_hydra')
-                                thargoid_hydra += 1
-                                db.set_setting('InaraProgress_thargoid_hydra', thargoid_hydra)
                                 targ_name = 'Hydra'
 
                             if reward == _ORTHRUS_TARG:
@@ -254,41 +256,23 @@ class ParseJournal:
                         if time_patch_14_02 < time_event: 
 
                             if reward == UP1402_SCOUT1_TARG or reward == UP1402_SCOUT2_TARG:
-                                thargoid_scout = db.get_setting('InaraProgress_thargoid_scout')
-                                thargoid_scout += 1
-                                db.set_setting('InaraProgress_thargoid_scout', thargoid_scout)
                                 targ_name = 'Scout'
 
                             if reward == UP1402_HUNTER_TARG:
-                                thargoid_hunter = db.get_setting('InaraProgress_thargoid_hunter')
-                                thargoid_hunter += 1
-                                db.set_setting('InaraProgress_thargoid_hunter', thargoid_hunter)
                                 targ_name = 'Hunter'
                         
                         if time_patch_14_02 < time_event < time_patch_18_06:
 
                             if reward == UP1402_CYCLOPS_TARG:
-                                thargoid_cyclops = db.get_setting('InaraProgress_thargoid_cyclops')
-                                thargoid_cyclops += 1
-                                db.set_setting('InaraProgress_thargoid_cyclops', thargoid_cyclops)
                                 targ_name = 'Cyclops'
 
                             if reward == UP1402_BASILISK_TARG:
-                                thargoid_basilisk = db.get_setting('InaraProgress_thargoid_basilisk')
-                                thargoid_basilisk += 1
-                                db.set_setting('InaraProgress_thargoid_basilisk', thargoid_basilisk)
                                 targ_name = 'Basilisk'
 
                             if reward == UP1402_MEDUSA_TARG:
-                                thargoid_medusa = db.get_setting('InaraProgress_thargoid_medusa')
-                                thargoid_medusa += 1
-                                db.set_setting('InaraProgress_thargoid_medusa', thargoid_medusa)
                                 targ_name = 'Medusa'
 
                             if reward == UP1402_HYDRA_TARG:
-                                thargoid_hydra = db.get_setting('InaraProgress_thargoid_hydra')
-                                thargoid_hydra += 1
-                                db.set_setting('InaraProgress_thargoid_hydra', thargoid_hydra)
                                 targ_name = 'Hydra'
 
                             if reward == UP1402_ORTHRUS_TARG:
@@ -297,27 +281,15 @@ class ParseJournal:
                         if time_event > time_patch_18_06:
 
                             if reward == UP1806_CYCLOPS_TARG:
-                                thargoid_cyclops = db.get_setting('InaraProgress_thargoid_cyclops')
-                                thargoid_cyclops += 1
-                                db.set_setting('InaraProgress_thargoid_cyclops', thargoid_cyclops)
                                 targ_name = 'Cyclops'
 
                             if reward == UP1806_BASILISK_TARG:
-                                thargoid_basilisk = db.get_setting('InaraProgress_thargoid_basilisk')
-                                thargoid_basilisk += 1
-                                db.set_setting('InaraProgress_thargoid_basilisk', thargoid_basilisk)
                                 targ_name = 'Basilisk'
 
                             if reward == UP1806_MEDUSA_TARG:
-                                thargoid_medusa = db.get_setting('InaraProgress_thargoid_medusa')
-                                thargoid_medusa += 1
-                                db.set_setting('InaraProgress_thargoid_medusa', thargoid_medusa)
                                 targ_name = 'Medusa'
 
                             if reward == UP1806_HYDRA_TARG:
-                                thargoid_hydra = db.get_setting('InaraProgress_thargoid_hydra')
-                                thargoid_hydra += 1
-                                db.set_setting('InaraProgress_thargoid_hydra', thargoid_hydra)
                                 targ_name = 'Hydra'
 
                             if reward == UP1806_ORTHRUS_TARG:
@@ -329,7 +301,11 @@ class ParseJournal:
                         if reward == REVENANT_TARG:
                             targ_name = 'Revenant'
 
-                        db.thargoid_add(reward, targ_name, time_event.strftime('%Y-%m-%d %H:%M:%S'))
+                        db.thargoid_add(timestamp, targ_name, reward)
+                        thargoid_kill = db.get_thargoid_count()
+                        thargoid_type_count = db.get_thargoid_type_count(targ_name)
+                        self.saved_thargoid_type_count(thargoid_type_count, targ_name)
+                        db.set_setting('InaraProgress_thargoid_kill', thargoid_kill)                        
 
             case 'docked':
                 if entry["StationType"] == "FleetCarrier":
@@ -340,24 +316,53 @@ class ParseJournal:
                     market = entry["MarketID"]
                     if db.get_docked_fleet(market):
                         db.set_market(market, 'sell')   # "StolenGoods":true, "BlackMarket":true
+                        trading_markets = db.get_market_count()
+                        db.set_setting('InaraProgress_trading_Markets', trading_markets)
                         pr_cr = entry["Count"] * (entry["SellPrice"] - entry["AvgPricePaid"])
                         if pr_cr > 0: 
-                            trade_profit = db.get_setting('InaraProgress_trade_profit')
-                            trade_profit += pr_cr
+                            db.set_trade(timestamp, market, pr_cr)
+                            trade_profit = db.get_trade_profit()
                             db.set_setting("InaraProgress_trade_profit", trade_profit)
 
             case 'marketbuy': 
                 if 'MarketID' in entry:
                     market = entry["MarketID"]                
                     if db.get_docked_fleet(market):   
-                        db.set_market(market, 'buy')                                        
+                        db.set_market(market, 'buy')
+                        trading_markets = db.get_market_count()
+                        db.set_setting('InaraProgress_trading_Markets', trading_markets)
 
             case 'searchandrescue':
                 if 'MarketID' in entry:
-                    db.set_market(entry["MarketID"], 'rescue')
-                    trade_profit = db.get_setting('InaraProgress_trade_profit')
-                    trade_profit += entry["Reward"]
+                    market = entry["MarketID"]
+                    db.set_market(market, 'rescue')
+                    trading_markets = db.get_market_count()
+                    db.set_setting('InaraProgress_trading_Markets', trading_markets)
+                    db.set_trade(timestamp, market, entry["Reward"])
+                    trade_profit = db.get_trade_profit()
                     db.set_setting("InaraProgress_trade_profit", trade_profit)
+
+    @staticmethod
+    def saved_thargoid_type_count(thargoid_type_count: int, targ_name: str):
+        match targ_name:
+            case 'Scout':
+                db.set_setting('InaraProgress_thargoid_scout', thargoid_type_count)
+            case 'Cyclops':
+                db.set_setting('InaraProgress_thargoid_cyclops', thargoid_type_count)
+            case 'Hunter':
+                db.set_setting('InaraProgress_thargoid_hunter', thargoid_type_count)
+            case 'Basilisk':
+                db.set_setting('InaraProgress_thargoid_basilisk', thargoid_type_count)
+            case 'Medusa':
+                db.set_setting('InaraProgress_thargoid_medusa', thargoid_type_count)
+            case 'Hydra':
+                db.set_setting('InaraProgress_thargoid_hydra', thargoid_type_count)
+            case 'Orthrus':
+                pass
+            case 'Banshees':
+                pass
+            case 'Revenant':
+                pass
 
 
 def get_filepaths(directory):
@@ -372,23 +377,32 @@ def get_filepaths(directory):
     return file_paths
 
 
-def parse_journal(journal_path: Path, tg: bool) -> int:
+def parse_journal(journal_path: Path) -> int:
 
-    return ParseJournal(tg).load_journal(journal_path)
+    return ParseJournal().load_journal(journal_path)
 
 
 def clear_db(session1: Session):
 
+    db.drop_table('journal_log')
+    db.drop_table('mission')
+    db.drop_table('planet_bio_fss')
+    db.drop_table('planet_bio_saa')
+    db.drop_table('bio_list')
+    db.drop_table('bio_list2')
+    db.drop_table('bio_lost')
+    db.drop_table('bio_shell')
+    db.drop_table('system_list')
+    db.drop_table('thargoid_list')
+    db.drop_table('market_list')
+    db.drop_table('docked_fleet')
+    db.drop_table('trade_list')
+    db.db_create()
+
+    """"
     session1.query(db.JournalLog).delete()
-    session1.query(db.SystemList).delete()
-    session1.query(db.ThargoidList).delete()
-    session1.query(db.PlanetBioSAA).delete()
-    session1.query(db.PlanetBioFSS).delete()
-    session1.query(db.BioList).delete()
-    session1.query(db.MarketList).delete()
-
     session1.commit()
-
+    """
 
 def parse_journals(cl_db: bool) -> None:
 
@@ -408,14 +422,6 @@ def journal_works(session1: Session) -> None:
 
     full_file_paths = get_filepaths(this.journal_dir_path)
     
-    thargoid_list = False
-    if session1.query(func.count(db.ThargoidList.id)).scalar() < 1:
-        thargoid_list = True 
-    if session1.query(func.count(db.SystemList.system_id)).scalar() < 1:
-        db.set_setting('InaraProgress_exploration_Visited', 0)
-    if session1.query(func.count(db.PlanetBioSAA.id)).scalar() < 1:
-        db.set_setting("InaraProgress_exobiologist_Planets", 0)
-
     try:
         """ 
         count = 0
@@ -429,7 +435,10 @@ def journal_works(session1: Session) -> None:
 
         """
         for f in full_file_paths:
-            parse_journal(f, thargoid_list)
+            parse_journal(f)
+
+        db.clear_lost_bio()
+        db.export_bio_lost_sumary()
 
     except Exception as ex:
         logger.error('Journal parsing failed', exc_info=ex)

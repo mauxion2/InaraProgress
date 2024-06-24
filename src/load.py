@@ -18,7 +18,7 @@ TODO
 import math
 import semantic_version
 import requests
-import datetime
+# import datetime
 from typing import Any, MutableMapping, Mapping
 
 
@@ -42,7 +42,7 @@ from data_progress.journal_read import parse_journals
 # Local imports
 from inara_progress import const, overlay
 from inara_progress.progresslog import ProgressLog
-from inara_progress.status_flags import StatusFlags2, StatusFlags
+from inara_progress.status_flags import StatusFlags2  # , StatusFlags
 from inara_progress.findpr import check_limit, check_threshold, check_tier
 
 
@@ -804,7 +804,6 @@ def update_combat_bond(entry):
             timestamp = entry["timestamp"]   # "timestamp":"2024-05-28T08:00:00Z"
             timestamp = timestamp.replace("T", " ")
             timestamp = timestamp.replace("Z", "")
-            time_event = datetime.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
 
             if reward == CYCLOPS_TARG:
                 plug.thargoid_cyclops += 1
@@ -831,7 +830,7 @@ def update_combat_bond(entry):
             if reward == REVENANT_TARG:
                 targ_name = 'Revenant'
 
-            data_db.thargoid_add(reward, targ_name, time_event.strftime('%Y-%m-%d %H:%M:%S'))
+            data_db.thargoid_add(timestamp, targ_name, reward)
 
     config_value_set()
     update_display(overlay_text, True)
@@ -931,19 +930,24 @@ def community(entry, count_sell):
 
 
 def update_market(entry, is_buy=False):
+    timestamp = entry["timestamp"]   # "timestamp":"2024-05-28T08:00:00Z"
+    timestamp = timestamp.replace("T", " ")
+    timestamp = timestamp.replace("Z", "")
+    market = entry["MarketID"]
     if is_buy:
-        if data_db.get_docked_fleet(entry["MarketID"]):   
-            plug.trading_Markets += data_db.set_market(entry["MarketID"], 'buy')
+        if data_db.get_docked_fleet(market):   
+            plug.trading_Markets += data_db.set_market(market, 'buy')
 
     else:
-        if data_db.get_docked_fleet(entry["MarketID"]):
+        if data_db.get_docked_fleet(market):
             overlay_text = ''
             count_sell = entry["Count"]
             pr_cr = count_sell * (entry["SellPrice"] - entry["AvgPricePaid"])
-            if pr_cr > 0: 
-                plug.trade_profit += pr_cr
+            if pr_cr > 0:
+                data_db.set_trade(timestamp, market, pr_cr)
+                plug.trade_profit += pr_cr 
                 overlay_text = "Trade Profit {:,}\n".format(plug.trade_profit)
-            plug.trading_Markets += data_db.set_market(entry["MarketID"], 'sell')
+            plug.trading_Markets += data_db.set_market(market, 'sell')
             plug.trading_Resources += count_sell
             #  selekja sprzedaz typ mining itp..
 
@@ -961,6 +965,9 @@ def update_exp_data(entry):
 
 def update_bio_data(entry):
     bio_data_tab = entry["BioData"]
+    count_bio = len(bio_data_tab) 
+    plug.exobiologist_Organic += count_bio
+           
     value_bio = 0
     bonus_bio = 0
     for bio in bio_data_tab:
@@ -970,11 +977,10 @@ def update_bio_data(entry):
     plug.bio_sell -= value_bio
     if plug.bio_sell < 0:
         plug.bio_sell = 0 
-    count_bio = len(bio_data_tab)
+
     plug.bio_find -= count_bio
     if plug.bio_find < 0:
         plug.bio_find = 0 
-    plug.exobiologist_Organic += count_bio
 
     if plug.bio_find == 0:
         # tabela bio tmp utracone dane
@@ -1018,13 +1024,20 @@ def update_bio_fss(entry):
 def update_bio_sample(entry):
     if "ScanType" in entry:
         if entry["ScanType"] == "Analyse":
+            timestamp = entry["timestamp"]   # "timestamp":"2024-05-28T08:00:00Z"
+            timestamp = timestamp.replace("T", " ")
+            timestamp = timestamp.replace("Z", "")
             system_id = entry["SystemAddress"]
             planet_id = entry["Body"]
             bio_codex = entry["Species"]
             bio_name = entry["Species_Localised"]
+            bio_variant = entry["Variant_Localised"]
+            bio_variant = bio_variant.replace(bio_name, "")
+            bio_variant = bio_variant.replace(" - ", "")
             bio_cost = data_db.get_bio_cost(bio_codex)
-            data_db.set_bio(system_id, planet_id, bio_codex, bio_name)
-            data_db.sell_bio(system_id, planet_id, bio_codex, bio_name, bio_cost)
+            plug.exobiologist_Unique = data_db.get_bio_unique_count()
+            data_db.set_bio(timestamp, system_id, planet_id, bio_codex, bio_name, bio_variant)
+            data_db.set_sell_bio(timestamp, system_id, planet_id, bio_codex, bio_name, bio_variant, bio_cost)
 
             plug.bio_sell += bio_cost
             plug.bio_find += 1
@@ -1033,8 +1046,13 @@ def update_bio_sample(entry):
 
 
 def update_died():
-    if plug.bio_find > 0:
-        data_db.export_bio_lost()
+    if plug.bio_find > 0:     # data_db.get_sell_bio_count()
+        timestamp = entry["timestamp"]   # "timestamp":"2024-05-28T08:00:00Z"
+        timestamp = timestamp.replace("T", " ")
+        timestamp = timestamp.replace("Z", "")
+        time_event = datetime.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+
+        data_db.export_bio_lost(time_event)
         data_db.finish_sell_bio()
         plug.bio_find = 0
         plug.bio_sell = 0
@@ -1129,9 +1147,17 @@ def update_mission_completed(entry):
 
 
 def update_rescue(entry):
+    timestamp = entry["timestamp"]   # "timestamp":"2024-05-28T08:00:00Z"
+    timestamp = timestamp.replace("T", " ")
+    timestamp = timestamp.replace("Z", "")
+    pr_cr = entry["Reward"]
+    market = entry["MarketID"]
+
     plug.rescue_Traded += entry["Count"]
-    plug.trade_profit += entry["Reward"]
-    plug.trading_Markets += data_db.set_market(entry["MarketID"], 'rescue')
+    plug.trade_profit += pr_cr
+    plug.trading_Markets += data_db.set_market(market, 'rescue')
+    data_db.set_trade(timestamp, market, pr_cr)
+
     config_value_set()
     update_display("Rescue {:,}".format(plug.rescue_Traded), True)    
 
@@ -1349,7 +1375,7 @@ def config_value_set() -> None:
     data_db.set_setting('InaraProgress_Rescue_FireOut', plug.rescue_FireOut)
     data_db.set_setting('InaraProgress_Rescue_Reboot', plug.rescue_Reboot)
     data_db.set_setting('InaraProgress_exploration_Distance', plug.exploration_Distance)
-    data_db.set_setting('InaraProgress_exploration_Distance_f', plug.exploration_Distance_f)
+    data_db.set_setting_f('InaraProgress_exploration_Distance_f', plug.exploration_Distance_f)
     data_db.set_setting('InaraProgress_exploration_Jumps', plug.exploration_Jumps)
     data_db.set_setting('InaraProgress_exploration_Visited', plug.exploration_Visited)
     data_db.set_setting('InaraProgress_exploration_L3scan', plug.exploration_L3scan)
@@ -1387,20 +1413,19 @@ def journals_parse():
     # plug.button.config(text='Wait Parsing')
     LOG.log('Wait Parsing', 'INFO')
     config_value_set()
-    plug.button.config(text='Final Parsing')
+    plug.button.config(text='Parsing Done')
 
     parse_journals(plug.clear_data_db.get())
     parse_config_value()
     update_display()
-    LOG.log('Final Parsing', 'INFO')
+    LOG.log('Parsing Done', 'INFO')
 
 
-def export_bio():
-    # data_db.export_bio_lost()
-    update_died()
-    
-    
-
+def clear_bio_counter():
+    plug.bio_find = 0
+    plug.bio_sell = 0
+	
+	
 def plugin_start3(plugin_dir: str) -> str:
 
     data_db.init()
@@ -1509,13 +1534,10 @@ def plugin_prefs(parent: Nb.Frame, cmdr: str, is_beta: bool) -> Nb.Frame:
         text='Enable overlay',
         variable=plug.use_overlay
     ).grid(row=21, column=0, padx=x_button_padding, pady=0, sticky=tk.W)
-    color_button = Nb.tk.Button(
-        frame,
-        text='Text Color',
-        foreground=plug.overlay_color.get(),
-        background='grey4',
-        command=lambda: color_chooser()
-    ).grid(row=21, column=1, padx=x_button_padding, pady=y_padding, sticky=tk.W)
+    color_button = tk.Button(frame, text='Text Color', foreground=plug.overlay_color.get(),
+                             background='grey4', command=lambda: color_chooser()
+                             )
+    color_button.grid(row=21, column=1, padx=x_button_padding, pady=y_padding, sticky=tk.W)
 
     anchor_frame = Nb.Frame(frame)
     anchor_frame.grid(row=21, column=2, sticky=tk.NSEW)
@@ -1564,8 +1586,8 @@ def plugin_prefs(parent: Nb.Frame, cmdr: str, is_beta: bool) -> Nb.Frame:
         variable=plug.clear_data_db
     ).grid(row=60, column=1, padx=x_button_padding, pady=0, sticky=tk.W)
 
-    # button = Nb.Button(frame, text='Test Export', command=export_bio)
-    # button.grid(row=65, column=0, padx=x_padding, sticky=tk.SW)
+    button = Nb.Button(frame, text='Clear Bio Counter', command=clear_bio_counter)
+    button.grid(row=65, column=0, padx=x_padding, sticky=tk.SW)
 
     return frame
 
@@ -1710,6 +1732,7 @@ def journal_entry(cmdr: str, is_beta: bool, system: str,
         case 'MultiSellExplorationData':
             update_exp_data(entry)
         case 'SellOrganicData':
+            # LOG.log(f"Event SellOrganicData", "INFO")
             update_bio_data(entry)
         case 'SAASignalsFound':
             update_bio_saa(entry)

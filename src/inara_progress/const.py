@@ -1,5 +1,5 @@
 plugin_name = 'InaraProgress'
-plugin_version = '1.4.7'
+plugin_version = '1.5.0'
 
 combat_ranks = {0: "Harmless", 1: "Mostly Harmless", 2: "Novice", 3: "Competent", 4: "Expert",
                 5: "Master", 6: "Dangerous", 7: "Deadly", 8: "Elite", 9: "Elite I", 10: "Elite II",
