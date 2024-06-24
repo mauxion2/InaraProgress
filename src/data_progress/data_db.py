@@ -96,10 +96,12 @@ class BioList(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     bio_time: Mapped[str] = mapped_column(default='')
     system_id: Mapped[int] = mapped_column(default='0')
+    system_name: Mapped[str] = mapped_column(default='')
     planet_id: Mapped[int] = mapped_column(default='0')
-    bio_codex: Mapped[str] = mapped_column(default='')
+    planet_name: Mapped[str] = mapped_column(default='')
     bio_name: Mapped[str] = mapped_column(default='')
     bio_variant: Mapped[str] = mapped_column(default='')
+    bio_codex: Mapped[str] = mapped_column(default='')    
 
 
 class BioList2(Base):
@@ -108,10 +110,12 @@ class BioList2(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     bio_time: Mapped[str] = mapped_column(default='')
     system_id: Mapped[int] = mapped_column(default='0')
+    system_name: Mapped[str] = mapped_column(default='')
     planet_id: Mapped[int] = mapped_column(default='0')
-    bio_codex: Mapped[str] = mapped_column(default='')
+    planet_name: Mapped[str] = mapped_column(default='')
     bio_name: Mapped[str] = mapped_column(default='')
     bio_variant: Mapped[str] = mapped_column(default='')
+    bio_codex: Mapped[str] = mapped_column(default='') 
 
 
 class BioLost(Base):
@@ -120,11 +124,13 @@ class BioLost(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     bio_time: Mapped[str] = mapped_column(default='')
     system_id: Mapped[int] = mapped_column(default='0')
+    system_name: Mapped[str] = mapped_column(default='')
     planet_id: Mapped[int] = mapped_column(default='0')
-    bio_codex: Mapped[str] = mapped_column(default='')
+    planet_name: Mapped[str] = mapped_column(default='')
     bio_name: Mapped[str] = mapped_column(default='')
     bio_variant: Mapped[str] = mapped_column(default='')
     bio_cost: Mapped[int] = mapped_column(default='0')
+    bio_codex: Mapped[str] = mapped_column(default='')    
 
 
 class BioShell(Base):
@@ -170,6 +176,7 @@ class MarketList(Base):
     __tablename__ = 'market_list'
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    system_id: Mapped[int] = mapped_column(default='0')
     market_id: Mapped[int] = mapped_column(default='0')
     trade: Mapped[str] = mapped_column(default='')
 
@@ -188,6 +195,17 @@ class TradeList(Base):
     tr_time: Mapped[str] = mapped_column(default='')
     market_id: Mapped[int] = mapped_column(default='0')
     tr_price: Mapped[int] = mapped_column(default='0')
+
+
+class SellDateDied(Base):
+    __tablename__ = 'sell_date_died'
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    sell_time: Mapped[str] = mapped_column(default='')
+    sell_count: Mapped[int] = mapped_column(default='0')
+    sell_typ0: Mapped[str] = mapped_column(default='')
+    sell_typ1: Mapped[str] = mapped_column(default='')
+    sell_typ2: Mapped[str] = mapped_column(default='')
 
 
 def run_statement(engine: Engine, statement: Executable) -> Result:
@@ -427,7 +445,7 @@ def get_system_list_count() -> int:
 def name_system(system_id: int) -> str:
     data: SystemList = this.sql_session.scalar(select(SystemList).where(SystemList.system_id == system_id))
     if not data:
-        return 'None'
+        return str(system_id)
     return data.system_name
 
 
@@ -436,7 +454,7 @@ def name_planet(system_id: int, planet_id: int) -> str:
                                                  .where(PlanetBioSAA.planet_id == planet_id))
     if data:
         return data.planet_name
-    return 'id {str(planet_id)}'
+    return 'id {}'.format(str(planet_id))
 
 
 def thargoid_add(thargoid_time: str, thargoid_name: str, thargoid_reward: int):
@@ -459,11 +477,11 @@ def get_thargoid_type_count(thargoid_name: str) -> int:
                                   .filter(ThargoidList.thargoid_name == thargoid_name)).scalar()
 
 
-def set_market(market_id: int, trade: str) -> int:
-    data: MarketList = this.sql_session.scalar(select(MarketList).where(MarketList.market_id == market_id))
+def set_market(system_id: int, market_id: int, trade: str) -> int:
+    data: MarketList = this.sql_session.scalar(select(MarketList).where(MarketList.system_id == system_id))
     count = 0
     if not data:
-        data = MarketList(market_id=market_id, trade=trade)
+        data = MarketList(system_id=system_id, market_id=market_id, trade=trade)
         this.sql_session.add(data)
         this.sql_session.commit()
         count = 1
@@ -476,11 +494,9 @@ def get_market_count() -> int:
 
 
 def set_trade(tr_time: str, market_id: int, tr_price: int):
-    data: TradeList = this.sql_session.scalar(select(TradeList).where(TradeList.tr_time == tr_time))
-    if not data:
-        data = TradeList(tr_time=tr_time, market_id=market_id, tr_price=tr_price)
-        this.sql_session.add(data)
-        this.sql_session.commit()
+    data = TradeList(tr_time=tr_time, market_id=market_id, tr_price=tr_price)
+    this.sql_session.add(data)
+    this.sql_session.commit()
 
  
 def get_trade_profit() -> int:
@@ -489,6 +505,14 @@ def get_trade_profit() -> int:
     for data in table:
         profit += data.tr_price
     return profit
+
+
+def set_sell_date_died(sell_time: str, sell_count: int, sell_typ0: str, sell_typ1: str, sell_typ2: str):
+
+    data = SellDateDied(sell_time=sell_time, sell_count=sell_count, 
+                        sell_typ0=sell_typ0, sell_typ1=sell_typ1, sell_typ2=sell_typ2)
+    this.sql_session.add(data)
+    this.sql_session.commit()
 
 
 def set_docked_fleet(market_id: int):
@@ -507,37 +531,48 @@ def get_docked_fleet(market_id: int) -> bool:
     return find_fleet    
 
 
-def set_bio(bio_time: str, system_id: int, planet_id: int, bio_codex: str, bio_name: str, bio_variant: str):
+def set_bio(bio_time: str, system_id: int, system_name: str, planet_id: int, planet_name: str, 
+            bio_name: str, bio_variant: str, bio_codex: str):
     data: BioList = this.sql_session.scalar(select(BioList).where(BioList.system_id == system_id)
                                             .where(BioList.planet_id == planet_id)
                                             .where(BioList.bio_codex == bio_codex)
-                                            .where(BioList.bio_name == bio_name)
-                                            .where(BioList.bio_variant == bio_variant)
                                             )
     if not data:
-        data = BioList(bio_time=bio_time, system_id=system_id, planet_id=planet_id, bio_codex=bio_codex, 
-                       bio_name=bio_name, bio_variant=bio_variant)
+        data = BioList(bio_time=bio_time, 
+                       system_id=system_id, system_name=system_name, 
+                       planet_id=planet_id, planet_name=planet_name, 
+                       bio_name=bio_name, bio_variant=bio_variant, bio_codex=bio_codex)
+        this.sql_session.add(data)
     else:
-        data = BioList2(bio_time=bio_time, system_id=system_id, planet_id=planet_id, bio_codex=bio_codex, 
-                        bio_name=bio_name, bio_variant=bio_variant)    
-    this.sql_session.add(data)
+        data1 = BioList2(bio_time=bio_time, 
+                         system_id=system_id, system_name=system_name, 
+                         planet_id=planet_id, planet_name=planet_name, 
+                         bio_name=bio_name, bio_variant=bio_variant, bio_codex=bio_codex)
+        this.sql_session.add(data1)
     this.sql_session.commit()
         
 
 def set_sell_bio(bio_time: str, system_id: int, planet_id: int, bio_codex: str, 
-             bio_name: str, bio_variant: str, bio_cost: int):
+                 bio_name: str, bio_variant: str, bio_cost: int):
     data = BioShell(bio_time=bio_time, system_id=system_id, planet_id=planet_id, bio_codex=bio_codex, 
                     bio_name=bio_name, bio_variant=bio_variant, bio_cost=bio_cost)
     this.sql_session.add(data)
     this.sql_session.commit()
 
 
-def set_lost_bio(bio_time: str, system_id: int, planet_id: int, bio_codex: str, 
-                 bio_name: str, bio_variant: str, bio_cost: int):
-    data = BioLost(bio_time=bio_time, system_id=system_id, planet_id=planet_id, bio_codex=bio_codex, 
-                   bio_name=bio_name, bio_variant=bio_variant, bio_cost=bio_cost)
+def set_lost_bio(bio_time: str, system_id: int, system_name: str, planet_id: int, planet_name: str, 
+                 bio_name: str, bio_variant: str, bio_cost: int, bio_codex: str):
+    data = BioLost(bio_time=bio_time, 
+                   system_id=system_id, system_name=system_name, 
+                   planet_id=planet_id, planet_name=planet_name, 
+                   bio_name=bio_name, bio_variant=bio_variant, bio_cost=bio_cost, bio_codex=bio_codex)
     this.sql_session.add(data)
     this.sql_session.commit()
+
+
+def get_lost_bio_count() -> int:
+
+    return this.sql_session.query(func.count(BioLost.id)).scalar()
 
 
 def get_bio_unknown_count() -> int:
@@ -577,7 +612,7 @@ def get_bio_unique_count() -> int:
 def finish_sell_bio():
     this.sql_session.query(BioShell).delete()
     this.sql_session.commit()
-    
+
 
 def get_sell_bio_count() -> int:
 
@@ -629,6 +664,7 @@ def export_bio_lost(stamp_time: datetime) -> None:
             text_exp += ' Planet: {}'.format(name_planet(data.system_id, data.planet_id))
             file.write(text_exp + '\n')
 
-            set_lost_bio(data.bio_time, data.system_id, data.planet_id, data.bio_codex, 
-                         data.bio_name, data.bio_variant, data.bio_cost)
+            set_lost_bio(data.bio_time, data.system_id, name_system(data.system_id),
+                         data.planet_id, name_planet(data.system_id, data.planet_id),
+                         data.bio_name, data.bio_variant, data.bio_cost, data.bio_codex)
         file.close()

@@ -8,17 +8,17 @@ Licensed under the [GNU Public License (GPL)](http://www.gnu.org/licenses/gpl-2.
 TODO
 
     2 decorated hero  value x2 x3 itp. zapis do bazy
-    3 tabla bio tmp utracone dane
+    3 
     4 sprawdzic sprzedaz jezeli sa   kill_bonds_foot i kill_bonds jednoczesnie
     5 trader sprzedaz commodities update_market  po typie oraz profit z miningu
-
+    6 dodac system do tabeli market powiazac z jump plug.curent_system dodac w parsing
 
 """
 # Core imports
 import math
 import semantic_version
 import requests
-# import datetime
+import datetime
 from typing import Any, MutableMapping, Mapping
 
 
@@ -193,6 +193,7 @@ class InaraProgress:
         self.miner_profit: int = 0
 
         self.wyd_il: int = 0
+        self.curent_system: int = 0
 
         self.frame = None
         self.labels = dict()
@@ -930,13 +931,14 @@ def community(entry, count_sell):
 
 
 def update_market(entry, is_buy=False):
+    # dodac system do tabli market powiazac z jump plug.curent_system dodac w parsing
     timestamp = entry["timestamp"]   # "timestamp":"2024-05-28T08:00:00Z"
     timestamp = timestamp.replace("T", " ")
     timestamp = timestamp.replace("Z", "")
     market = entry["MarketID"]
     if is_buy:
         if data_db.get_docked_fleet(market):   
-            plug.trading_Markets += data_db.set_market(market, 'buy')
+            plug.trading_Markets += data_db.set_market(plug.curent_system, market, 'buy')
 
     else:
         if data_db.get_docked_fleet(market):
@@ -947,7 +949,7 @@ def update_market(entry, is_buy=False):
                 data_db.set_trade(timestamp, market, pr_cr)
                 plug.trade_profit += pr_cr 
                 overlay_text = "Trade Profit {:,}\n".format(plug.trade_profit)
-            plug.trading_Markets += data_db.set_market(market, 'sell')
+            plug.trading_Markets += data_db.set_market(plug.curent_system, market, 'sell')
             plug.trading_Resources += count_sell
             #  selekja sprzedaz typ mining itp..
 
@@ -966,25 +968,40 @@ def update_exp_data(entry):
 def update_bio_data(entry):
     bio_data_tab = entry["BioData"]
     count_bio = len(bio_data_tab) 
+    sell_bio_count = data_db.get_sell_bio_count()
+    clear_sell_bio_table = False
     plug.exobiologist_Organic += count_bio
-           
+    # jezeli sell_bio_count < od count_bio blad wpisow mozliwe wylaczony plugin
+
     value_bio = 0
     bonus_bio = 0
     for bio in bio_data_tab:
         value_bio += bio["Value"]
         bonus_bio += bio["Bonus"]
     plug.bio_profit += value_bio + bonus_bio
-    plug.bio_sell -= value_bio
-    if plug.bio_sell < 0:
-        plug.bio_sell = 0 
 
-    plug.bio_find -= count_bio
-    if plug.bio_find < 0:
-        plug.bio_find = 0 
+    if count_bio == sell_bio_count:
+        clear_sell_bio_table = True
+        plug.bio_sell = 0
+        plug.bio_find = 0
+    else:    
+        plug.bio_sell -= value_bio
+        if plug.bio_sell < 0:
+            plug.bio_sell = 0 
 
-    if plug.bio_find == 0:
+        plug.bio_find -= count_bio
+        if plug.bio_find < 0:
+            plug.bio_find = 0 
+
+        if plug.bio_find == 0:
+            clear_sell_bio_table = True   
+
+    if clear_sell_bio_table:
         # tabela bio tmp utracone dane
         data_db.finish_sell_bio()
+        if data_db.get_lost_bio_count() > 0:
+            data_db.clear_lost_bio()
+            data_db.export_bio_lost_sumary()
 
     config_trade_set()
     config_value_set()
@@ -1036,7 +1053,9 @@ def update_bio_sample(entry):
             bio_variant = bio_variant.replace(" - ", "")
             bio_cost = data_db.get_bio_cost(bio_codex)
             plug.exobiologist_Unique = data_db.get_bio_unique_count()
-            data_db.set_bio(timestamp, system_id, planet_id, bio_codex, bio_name, bio_variant)
+            data_db.set_bio(timestamp, system_id, data_db.name_system(system_id),
+                            planet_id, data_db.name_planet(system_id, planet_id),
+                            bio_name, bio_variant, bio_codex)
             data_db.set_sell_bio(timestamp, system_id, planet_id, bio_codex, bio_name, bio_variant, bio_cost)
 
             plug.bio_sell += bio_cost
@@ -1045,7 +1064,7 @@ def update_bio_sample(entry):
             update_display()
 
 
-def update_died():
+def update_died(entry):
     if plug.bio_find > 0:     # data_db.get_sell_bio_count()
         timestamp = entry["timestamp"]   # "timestamp":"2024-05-28T08:00:00Z"
         timestamp = timestamp.replace("T", " ")
@@ -1073,6 +1092,7 @@ def update_docked(entry):
 
 def update_jump(entry):
     overlay_text = ""
+    plug.curent_system = entry["SystemAddress"]
     plug.exploration_Jumps += 1
     jump_d = entry["JumpDist"]
     jump_c = math.floor(jump_d)
@@ -1089,7 +1109,7 @@ def update_jump(entry):
     overlay_text += "Distance {:,}".format(plug.exploration_Distance)    
 
     # system  wizyted baza dany zapis  i sprawdzenie 
-    if not data_db.check_system(entry["SystemAddress"], entry["StarSystem"]):
+    if not data_db.check_system(plug.curent_system, entry["StarSystem"]):
         plug.exploration_Visited += 1
         overlay_text += "\n New System Visited {:,}".format(plug.exploration_Visited)
 
@@ -1155,7 +1175,7 @@ def update_rescue(entry):
 
     plug.rescue_Traded += entry["Count"]
     plug.trade_profit += pr_cr
-    plug.trading_Markets += data_db.set_market(market, 'rescue')
+    plug.trading_Markets += data_db.set_market(plug.curent_system, market, 'rescue')
     data_db.set_trade(timestamp, market, pr_cr)
 
     config_value_set()
@@ -1329,6 +1349,7 @@ def parse_config_value() -> None:
     plug.miner_profit = data_db.get_setting('InaraProgress_miner_profit')
 
     plug.wyd_il = data_db.get_setting('InaraProgress_wyd_il')
+    plug.curent_system = data_db.get_setting("InaraProgress_curent_system")
 
 
 def config_rank_set() -> None:
@@ -1395,6 +1416,7 @@ def config_value_set() -> None:
 
     data_db.set_setting("InaraProgress_bio_bonus", plug.bio_sell)
     data_db.set_setting("InaraProgress_bio_find", plug.bio_find)
+    data_db.set_setting("InaraProgress_curent_system", plug.curent_system)
 
 
 def config_trade_set() -> None:
@@ -1424,8 +1446,8 @@ def journals_parse():
 def clear_bio_counter():
     plug.bio_find = 0
     plug.bio_sell = 0
-	
-	
+
+
 def plugin_start3(plugin_dir: str) -> str:
 
     data_db.init()
@@ -1588,6 +1610,7 @@ def plugin_prefs(parent: Nb.Frame, cmdr: str, is_beta: bool) -> Nb.Frame:
 
     button = Nb.Button(frame, text='Clear Bio Counter', command=clear_bio_counter)
     button.grid(row=65, column=0, padx=x_padding, sticky=tk.SW)
+
 
     return frame
 
@@ -1753,4 +1776,4 @@ def journal_entry(cmdr: str, is_beta: bool, system: str,
         case 'Docked':
             update_docked(entry)
         case 'Died':
-            update_died()
+            update_died(entry)

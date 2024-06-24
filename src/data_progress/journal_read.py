@@ -80,6 +80,7 @@ class This:
         dir_path = dir_path if dir_path else config.default_journal_dir_path
         self.journal_dir_path = expanduser(dir_path)
         self.journal_run: bool = False
+        self.curent_system: int = 0
 
 
 this = This()
@@ -147,6 +148,7 @@ class ParseJournal:
         match event_type:
 
             case 'fsdjump':
+                this.curent_system = entry["SystemAddress"]
                 exploration_jumps = db.get_setting('InaraProgress_exploration_Jumps')
                 exploration_jumps += 1
                 db.set_setting('InaraProgress_exploration_Jumps', exploration_jumps)
@@ -185,6 +187,8 @@ class ParseJournal:
                     planet_id = entry["Body"]
                     bio_codex = entry["Species"]
                     bio_name = entry["Species_Localised"]
+                    db.set_sell_date_died(timestamp, 0, db.name_system(system_id), 
+                                          db.name_planet(system_id, planet_id), bio_name)
                     if "Variant_Localised" in entry:
                         bio_variant = entry["Variant_Localised"]
                         bio_variant = bio_variant.replace(bio_name, "")
@@ -192,12 +196,14 @@ class ParseJournal:
                     else:
                         bio_variant = 'unknown'    
                     bio_cost = db.get_bio_cost(bio_codex)
-                    db.set_bio(timestamp, system_id, planet_id, bio_codex, bio_name, bio_variant)
+                    db.set_bio(timestamp, system_id, db.name_system(system_id),
+                               planet_id, db.name_planet(system_id, planet_id), bio_name, bio_variant, bio_codex)
                     db.set_sell_bio(timestamp, system_id, planet_id, bio_codex, bio_name, bio_variant, bio_cost)
 
             case 'sellorganicdata':                    
                 bio_data_tab = entry["BioData"]
                 bio_data_tab_len = len(bio_data_tab)
+                db.set_sell_date_died(timestamp, bio_data_tab_len, '', '', '')
                 sell_bio_count = db.get_sell_bio_count()
                 exobiologist_organic = db.get_setting('InaraProgress_exobiologist_Organic')
                 exobiologist_organic += bio_data_tab_len
@@ -219,6 +225,11 @@ class ParseJournal:
                         db.delete_sell_bio(bio_codex, bio_name, bio_variant, bio_cost)
 
             case 'died':
+                if 'KillerName' in entry:
+                    tx = entry["KillerName"]
+                else:
+                    tx = 'died'
+                db.set_sell_date_died(timestamp, 0, tx, '', '')
                 if db.get_sell_bio_count() > 0:
                     db.export_bio_lost(time_event)
                     db.finish_sell_bio()    
@@ -315,7 +326,7 @@ class ParseJournal:
                 if 'MarketID' in entry:
                     market = entry["MarketID"]
                     if db.get_docked_fleet(market):
-                        db.set_market(market, 'sell')   # "StolenGoods":true, "BlackMarket":true
+                        db.set_market(this.curent_system, market, 'sell')   # "StolenGoods":true, "BlackMarket":true
                         trading_markets = db.get_market_count()
                         db.set_setting('InaraProgress_trading_Markets', trading_markets)
                         pr_cr = entry["Count"] * (entry["SellPrice"] - entry["AvgPricePaid"])
@@ -328,14 +339,14 @@ class ParseJournal:
                 if 'MarketID' in entry:
                     market = entry["MarketID"]                
                     if db.get_docked_fleet(market):   
-                        db.set_market(market, 'buy')
+                        db.set_market(this.curent_system, market, 'buy')
                         trading_markets = db.get_market_count()
                         db.set_setting('InaraProgress_trading_Markets', trading_markets)
 
             case 'searchandrescue':
                 if 'MarketID' in entry:
                     market = entry["MarketID"]
-                    db.set_market(market, 'rescue')
+                    db.set_market(this.curent_system, market, 'rescue')
                     trading_markets = db.get_market_count()
                     db.set_setting('InaraProgress_trading_Markets', trading_markets)
                     db.set_trade(timestamp, market, entry["Reward"])
@@ -397,12 +408,14 @@ def clear_db(session1: Session):
     db.drop_table('market_list')
     db.drop_table('docked_fleet')
     db.drop_table('trade_list')
+    db.drop_table('sell_date_died')
     db.db_create()
 
     """"
     session1.query(db.JournalLog).delete()
     session1.commit()
     """
+
 
 def parse_journals(cl_db: bool) -> None:
 
