@@ -21,3 +21,7 @@ Allows tracking of Elite Dangrous ranks and [INARA](https://inara.cz/) awards.
 
  * Install the [EDMCOverlay](https://github.com/inorton/EDMCOverlay) plugin for overlay support
  * Start or restart EDMC to register the plugin and first run parsing Journal logs in plugin settings
+
+# Function
+ Tracks not sold bio samples and automatically exports their location to text file in event of untimely demise.
+ In Dir `%LOCALAPPDATA%\EDMarketConnector\data_lost\bio_*death timestamp*.txt` 
