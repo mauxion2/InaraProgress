@@ -20,6 +20,7 @@ from config import config
 
 from data_progress import const
 from data_progress import data_db as db
+from inara_progress.progresslog import ProgressLog
 
 
 _HYDRA_TARG = 60000000
@@ -84,6 +85,7 @@ class This:
 
 
 this = This()
+LOG = ProgressLog()
 logger = get_plugin_logger(const.plugin_name)
 
 
@@ -147,12 +149,16 @@ class ParseJournal:
         event_type = entry['event'].lower()
         match event_type:
 
+            case 'supercruiseentry':
+                this.curent_system = entry["SystemAddress"]
+                db.check_system(this.curent_system, entry["StarSystem"])
+
             case 'fsdjump':
                 this.curent_system = entry["SystemAddress"]
                 exploration_jumps = db.get_setting('InaraProgress_exploration_Jumps')
                 exploration_jumps += 1
                 db.set_setting('InaraProgress_exploration_Jumps', exploration_jumps)
-                if not db.check_system(entry["SystemAddress"], entry["StarSystem"]):
+                if not db.check_system(this.curent_system, entry["StarSystem"]):
                     exploration_visited = db.get_system_list_count()
                     db.set_setting('InaraProgress_exploration_Visited', exploration_visited)
 
@@ -223,6 +229,8 @@ class ParseJournal:
                             bio_variant = 'unknown'    
                         bio_cost = bio["Value"]
                         db.delete_sell_bio(bio_codex, bio_name, bio_variant, bio_cost)
+                elif bio_data_tab_len > sell_bio_count:
+                    LOG.log(f"ERROR bio data sell table larger than table DB", "INFO")
 
             case 'died':
                 if 'KillerName' in entry:
@@ -319,6 +327,8 @@ class ParseJournal:
                         db.set_setting('InaraProgress_thargoid_kill', thargoid_kill)                        
 
             case 'docked':
+                this.curent_system = entry["SystemAddress"]
+                db.check_system(this.curent_system, entry["StarSystem"])                
                 if entry["StationType"] == "FleetCarrier":
                     db.set_docked_fleet(entry["MarketID"])
 
@@ -378,14 +388,36 @@ class ParseJournal:
 
 def get_filepaths(directory):
 
+    # Function to create a list of tuples
+    def create_list_of_tuples(lst1, lst2):
+        result = []  # Empty list to store the tuples
+        for i in range(len(lst1)):
+            # Create a tuple from corresponding elements
+            tuple_element = (lst1[i], lst2[i])
+            result.append(tuple_element)  # Append the tuple to the list
+        return result
+
     file_paths: list[Path] = []
+    timestamp: list[datetime] = []
 
     for journal_file in os.listdir(directory):
         if journal_file.endswith(".log"):
-            journal_file = Path(directory) / journal_file
-            file_paths.append(journal_file)
+            path_journal_file = Path(directory) / journal_file
+            file_paths.append(path_journal_file)
+            # Journal.2022-03-23T20 47 19.01.log
+            # Journal.  18 04 21 19 18 18.01.log
+            journal_file = journal_file.replace("Journal.", "")
+            journal_file = journal_file.replace(".01.log", "")
+            journal_file = journal_file.replace("T", "")
+            journal_file = journal_file.replace("-", "")
+            if len(journal_file) == 12:
+                journal_file = '20' + journal_file 
+            timestamp.append(datetime.datetime.strptime(journal_file, '%Y%m%d%H%M%S'))
 
-    return file_paths
+    list_of_tuples = create_list_of_tuples(timestamp, file_paths)
+    list_of_tuples.sort()
+
+    return list_of_tuples
 
 
 def parse_journal(journal_path: Path) -> int:
@@ -448,7 +480,8 @@ def journal_works(session1: Session) -> None:
 
         """
         for f in full_file_paths:
-            parse_journal(f)
+
+            parse_journal(f[1])
 
         db.clear_lost_bio()
         db.export_bio_lost_sumary()

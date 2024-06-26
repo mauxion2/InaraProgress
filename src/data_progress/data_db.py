@@ -426,11 +426,11 @@ def get_planet_biosaa_count() -> int:
     return this.sql_session.query(func.count(PlanetBioSAA.id)).scalar()
 
 
-def check_system(system_address: int, system_name: str) -> bool:
+def check_system(system_id: int, system_name: str) -> bool:
     system_check = True
-    data: SystemList = this.sql_session.scalar(select(SystemList).where(SystemList.system_id == system_address))
+    data: SystemList = this.sql_session.scalar(select(SystemList).where(SystemList.system_id == system_id))
     if not data:
-        data = SystemList(system_id=system_address, system_name=system_name)
+        data = SystemList(system_id=system_id, system_name=system_name)
         this.sql_session.add(data)
         this.sql_session.commit()
         system_check = False
@@ -444,9 +444,9 @@ def get_system_list_count() -> int:
 
 def name_system(system_id: int) -> str:
     data: SystemList = this.sql_session.scalar(select(SystemList).where(SystemList.system_id == system_id))
-    if not data:
-        return str(system_id)
-    return data.system_name
+    if data:
+        return data.system_name
+    return str(system_id)
 
 
 def name_planet(system_id: int, planet_id: int) -> str:
@@ -583,11 +583,10 @@ def get_bio_unknown_count() -> int:
 def delete_sell_bio(bio_codex: str, bio_name: str, bio_variant: str, bio_cost: int):
     unknown_count = get_bio_unknown_count()
     if unknown_count > 0:
-        stmt = this.sql_session.query(BioShell).filter_by(bio_codex=bio_codex, bio_name=bio_name,
-                                                          bio_cost=bio_cost).first()
+        stmt = this.sql_session.query(BioShell).filter_by(bio_codex=bio_codex, bio_name=bio_name).first()
     else:
         stmt = this.sql_session.query(BioShell).filter_by(bio_codex=bio_codex, bio_name=bio_name,
-                                                          bio_variant=bio_variant, bio_cost=bio_cost).first()
+                                                          bio_variant=bio_variant).first()
     if stmt:
         this.sql_session.delete(stmt)
         this.sql_session.commit()
@@ -658,8 +657,10 @@ def export_bio_lost(stamp_time: datetime) -> None:
         filename = 'bio_' + stamp_time + '.txt'
         file = open(export_path / filename, 'w')
         table = this.sql_session.query(BioShell).all()
+        count = 0
         for data in table:
-            text_exp = '{} | Name: {} | cost: {} |'.format(data.bio_time, data.bio_name, str(data.bio_cost))
+            count += 1
+            text_exp = '{}-{} | Name: {} | cost: {} |'.format(count, data.bio_time, data.bio_name, str(data.bio_cost))
             text_exp += ' System: {} |'.format(name_system(data.system_id))
             text_exp += ' Planet: {}'.format(name_planet(data.system_id, data.planet_id))
             file.write(text_exp + '\n')
