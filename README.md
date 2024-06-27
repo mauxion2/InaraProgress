@@ -25,3 +25,5 @@ Allows tracking of Elite Dangrous ranks and [INARA](https://inara.cz/) awards.
 # Function
  Tracks not sold bio samples and automatically exports their location to text file in event of untimely demise.
  In Dir `%LOCALAPPDATA%\EDMarketConnector\data_lost\bio_*death timestamp*.txt` 
+
+Trade Profit - Shows profits counting to rank progress
