@@ -122,6 +122,8 @@ class InaraProgress:
         self.show_Captain: tk.BooleanVar | None = None
         self.show_dh_progress: tk.BooleanVar | None = None
         self.clear_data_db: tk.BooleanVar | None = None
+        self.show_titan: tk.BooleanVar | None = None
+
 
         # Ranks
         self.combat: int = 0
@@ -1242,6 +1244,7 @@ def parse_config() -> None:
     plug.show_dh_progress = tk.BooleanVar(value=config.get_bool(key='InaraProgress_show_dh_progress', default=True))
 
     plug.show_thargoid_progress = tk.BooleanVar(value=config.get_bool(key='InaraProgress_show_thargoid', default=True))
+    plug.show_titan = tk.BooleanVar(value=config.get_bool(key='InaraProgress_show_titan', default=True))
 
     plug.use_overlay = tk.BooleanVar(value=config.get_bool(key='InaraProgress_overlay', default=False))
     plug.overlay_color = tk.StringVar(value=config.get_str(key='InaraProgress_overlay_color', default='#ff0000'))
@@ -1527,6 +1530,11 @@ def plugin_prefs(parent: Nb.Frame, cmdr: str, is_beta: bool) -> Nb.Frame:
         .grid(row=20, column=0, padx=x_padding, sticky=tk.NW)
     Nb.Checkbutton(
         frame,
+        text='Enable display Titans',
+        variable=plug.show_titan
+    ).grid(row=20, column=1, padx=x_button_padding, pady=0, sticky=tk.W)
+    Nb.Checkbutton(
+        frame,
         text='Enable overlay',
         variable=plug.use_overlay
     ).grid(row=21, column=0, padx=x_button_padding, pady=0, sticky=tk.W)
@@ -1606,6 +1614,7 @@ def prefs_changed(cmdr: str, is_beta: bool) -> None:
     config.set('InaraProgress_show_dh_progress', plug.show_dh_progress.get())   
 
     config.set('InaraProgress_show_thargoid', plug.show_thargoid_progress.get())
+    config.set('InaraProgress_show_titan', plug.show_titan.get())
 
     config.set('InaraProgress_overlay', plug.use_overlay.get())
     config.set('InaraProgress_overlay_color', plug.overlay_color.get())
@@ -1619,6 +1628,7 @@ def prefs_changed(cmdr: str, is_beta: bool) -> None:
     setup_frame_new()
     update_stats()
     update_display('Test Display Positon Info', True)
+    titan_state()
 
 
 def version_check() -> str:
@@ -1761,21 +1771,24 @@ def journal_entry(cmdr: str, is_beta: bool, system: str,
 
 
 def titan_state():
-    try:
-        req = requests.get(url='https://dcoh.watch/api/v1/Overwatch/Titans')
-        data = req.json()
-        titans = data['maelstroms']
+    if plug.show_titan.get():
+        try:
+            req = requests.get(url='https://dcoh.watch/api/v1/Overwatch/Titans')
+            data = req.json()
+            titans = data['maelstroms']
 
-        for titan in titans:
+            for titan in titans:
 
-            if titan['name'] == "Indra":
-                overlay_titan = titan['name']
-                overlay_titan += '  Hearts: ' + str(titan['heartsRemaining'])
-                overlay_titan += '  Progress: {:.4f}'.format(titan['heartProgress']*100)
-                plug.overlay.display('inaraprogress_titan', overlay_titan, plug.overlay_info_x.get(), 
-                              plug.overlay_info_y.get() + 50, plug.overlay_color.get(), 'large')
+                if titan['name'] == "Indra":
+                    overlay_titan = titan['name']
+                    overlay_titan += '  Hearts: ' + str(titan['heartsRemaining'])
+                    overlay_titan += '  Progress: {:.4f}'.format(titan['heartProgress']*100)
+                    plug.overlay.display('inaraprogress_titan', overlay_titan, plug.overlay_info_x.get(), 
+                                         plug.overlay_info_y.get() + 50, plug.overlay_color.get(), 'large')
 
-    except (requests.RequestException, requests.JSONDecodeError):
-        LOG.log('Failed to load Titans', "INFO")
-        return ''    
+        except (requests.RequestException, requests.JSONDecodeError):
+            LOG.log('Failed to load Titans', "INFO")
+    else:
+        plug.overlay.clear('inaraprogress_titan')        
+   
 
