@@ -11,7 +11,7 @@ TODO
     3 
     4 sprawdzic sprzedaz jezeli sa   kill_bonds_foot i kill_bonds jednoczesnie
     5 trader sprzedaz commodities update_market  po typie oraz profit z miningu
-    6 dodac system do tabeli market powiazac z jump plug.curent_system dodac w parsing
+    6 
 
 """
 # Core imports
@@ -34,7 +34,7 @@ from ttkHyperlinkLabel import HyperlinkLabel
 
 # Database objects
 from sqlalchemy.orm import Session
-
+import sqlalchemy as sa
 
 from data_progress import data_db
 from data_progress.journal_read import parse_journals
@@ -49,6 +49,7 @@ from inara_progress.findpr import check_limit, check_threshold, check_tier
 HUNTER_TARG = 4500000
 SCOUT2_TARG = 75000
 SCOUT1_TARG = 65000
+SCOUT3_TARG = 80000
 
 BANSHEES_TARG = 1000000 
 REVENANT_TARG = 25000 
@@ -80,6 +81,7 @@ Orthrus                 30,000,000 → 40,000,000
     Medusa   34,000,000 → 40,000,000
     Hydra    50,000,000 → 60,000,000
     Orthrus  40,000,000 → 15,000,000
+ Scout (Marauder) 80,000   
 """
 
 
@@ -194,6 +196,7 @@ class InaraProgress:
 
         self.wyd_il: int = 0
         self.curent_system: int = 0
+        self.pos_null: list[float] = [0.0, 0.0, 0.0]
 
         self.frame = None
         self.labels = dict()
@@ -761,17 +764,6 @@ def update_promotion(entry):
     update_stats()
 
 
-#  "event":"Bounty", "Rewards":[ { "Faction":"Nehet Patron's Principles", "Reward":5620 } ],
-#                    "Target":"empire_eagle",
-#                    "TotalReward":5620,
-#                    "VictimFaction":"Nehet Progressive Party"
-#                    }
-#  "event":"Bounty","Faction":"HIP 18828 Empire Consulate",
-#                   "Target":"Skimmer",
-#                   "Reward":1000,
-#                   "VictimFaction":"HIP 18828 Empire Consulate"
-
-
 def update_hunter_bounty(entry):
     
     total_reward = entry["TotalReward"]
@@ -818,7 +810,7 @@ def update_combat_bond(entry):
             if reward == HYDRA_TARG:
                 plug.thargoid_hydra += 1
                 targ_name = 'Hydra'
-            if reward == SCOUT1_TARG or reward == SCOUT2_TARG:
+            if reward == SCOUT1_TARG or reward == SCOUT2_TARG or reward == SCOUT3_TARG:
                 plug.thargoid_scout += 1
                 targ_name = 'Scout'
             if reward == HUNTER_TARG:
@@ -891,35 +883,6 @@ def update_redeem_voucher(entry):
 
     config_value_set()
     update_display(overlay_text, True)
-
-
-""""
-"event":"MarketSell", "MarketID":128983318, 
-        "Type":"osmium", "Count":32, "SellPrice":167641, "TotalSale":5364512, "AvgPricePaid":0 }
-"event":"MarketSell", "MarketID":128734402, 
-        "Type":"osmium", "Count":40, "SellPrice":203012, "TotalSale":8120480, "AvgPricePaid":100440 }
-"event":"MarketSell", "MarketID":3700276224, 
-        "Type":"powerconverter", 
-        "Type_Localised":"Power Converter", 
-        "Count":8, "SellPrice":72, 
-        "TotalSale":576, 
-        "AvgPricePaid":143500 
-        }
-"event":"MarketBuy", "MarketID":3705283584, 
-        "Type":"osmium", "Count":7, "BuyPrice":61473, "TotalCost":430311 }
-"event":"MarketSell", "MarketID":128983318, 
-        "Type":"gold", "Count":3, "SellPrice":55985, "TotalSale":167955, "AvgPricePaid":0 }
-"event":"MarketSell", "MarketID":128983318, 
-        "Type":"silver", "Count":31, "SellPrice":48935, "TotalSale":1516985, "AvgPricePaid":0 }
-"event":"MarketSell", "MarketID":128983318, 
-        "Type":"palladium", "Count":7, "SellPrice":59149, "TotalSale":414043, "AvgPricePaid":0 }
-"event":"MarketSell", "MarketID":128983318, 
-        "Type":"platinum", "Count":10, "SellPrice":202450, "TotalSale":2024500, "AvgPricePaid":0 }
-"event":"MarketSell", "MarketID":128983318, 
-        "Type":"monazite", "Count":15, "SellPrice":356077, "TotalSale":5341155, "AvgPricePaid":0 }
-"event":"MarketSell", "MarketID":128983318, 
-        "Type":"osmium", "Count":32, "SellPrice":167641, "TotalSale":5364512, "AvgPricePaid":0 }
-"""
 
 
 def community(entry, count_sell):
@@ -1064,6 +1027,39 @@ def update_bio_sample(entry):
             update_display()
 
 
+def update_jump(entry):
+    overlay_text = ""
+    plug.curent_system = entry["SystemAddress"]
+    plug.exploration_Jumps += 1
+    jump_d = entry["JumpDist"]
+    jump_c = math.floor(jump_d)
+    jump_f = jump_d - jump_c
+    plug.exploration_Distance += jump_c
+    plug.exploration_Distance_f += jump_f    
+    if plug.exploration_Distance_f > 1:
+        jump_d = plug.exploration_Distance_f
+        jump_c = math.floor(jump_d)
+        plug.exploration_Distance += jump_c
+        jump_f = jump_d - jump_c
+        plug.exploration_Distance_f = jump_f
+    overlay_text += "Jumps {:,} ".format(plug.exploration_Jumps)
+    overlay_text += "Distance {:,}".format(plug.exploration_Distance)    
+
+    # system  wizyted baza dany zapis  i sprawdzenie
+    if not data_db.check_system(plug.curent_system, entry["StarSystem"], entry["StarPos"], True):
+        plug.exploration_Visited += 1
+        overlay_text += "\n New System Visited {:,}".format(plug.exploration_Visited)
+
+    config_value_set()
+    update_display(overlay_text, True)
+
+
+def update_discovery_scan(entry):
+    plug.curent_system = entry["SystemAddress"]
+    data_db.check_system(plug.curent_system, entry["SystemName"], plug.pos_null, False)
+    data_db.set_system_bc(plug.curent_system, entry["BodyCount"])
+
+
 def update_died(entry):
     if plug.bio_find > 0:     # data_db.get_sell_bio_count()
         timestamp = entry["timestamp"]   # "timestamp":"2024-05-28T08:00:00Z"
@@ -1086,36 +1082,14 @@ def update_mining_refined():
 
 
 def update_docked(entry):
+    data_db.check_system(entry["SystemAddress"], entry["StarSystem"], plug.pos_null, False)
     if entry["StationType"] == "FleetCarrier":
         data_db.set_docked_fleet(entry["MarketID"])
 
 
-def update_jump(entry):
-    overlay_text = ""
-    plug.curent_system = entry["SystemAddress"]
-    plug.exploration_Jumps += 1
-    jump_d = entry["JumpDist"]
-    jump_c = math.floor(jump_d)
-    jump_f = jump_d - jump_c
-    plug.exploration_Distance += jump_c
-    plug.exploration_Distance_f += jump_f    
-    if plug.exploration_Distance_f > 1:
-        jump_d = plug.exploration_Distance_f
-        jump_c = math.floor(jump_d)
-        plug.exploration_Distance += jump_c
-        jump_f = jump_d - jump_c
-        plug.exploration_Distance_f = jump_f
-    overlay_text += "Jumps {:,} ".format(plug.exploration_Jumps)
-    overlay_text += "Distance {:,}".format(plug.exploration_Distance)    
-
-    # system  wizyted baza dany zapis  i sprawdzenie 
-    if not data_db.check_system(plug.curent_system, entry["StarSystem"]):
-        plug.exploration_Visited += 1
-        overlay_text += "\n New System Visited {:,}".format(plug.exploration_Visited)
-
-    config_value_set()
-    update_display(overlay_text, True)
-
+def update_supercruiseentry(entry):
+    data_db.check_system(entry["SystemAddress"], entry["StarSystem"], plug.pos_null, False)
+    
 
 def update_mission_accepted(entry):
     if "PassengerCount" in entry:    
@@ -1611,7 +1585,6 @@ def plugin_prefs(parent: Nb.Frame, cmdr: str, is_beta: bool) -> Nb.Frame:
     button = Nb.Button(frame, text='Clear Bio Counter', command=clear_bio_counter)
     button.grid(row=65, column=0, padx=x_padding, sticky=tk.SW)
 
-
     return frame
 
 
@@ -1725,11 +1698,13 @@ def dashboard_entry(cmdr: str, is_beta: bool, entry: dict[str, any]) -> str:
     if update:
         update_display()
 
+    titan_state()
     return ''
 
 
 def journal_entry(cmdr: str, is_beta: bool, system: str,
                   station: str, entry: MutableMapping[str, Any], state: Mapping[str, Any]):
+    titan_state()
     match entry['event']:
         case 'Statistics':
             # LOG.log(f"Event Statistics", "INFO")
@@ -1757,16 +1732,20 @@ def journal_entry(cmdr: str, is_beta: bool, system: str,
         case 'SellOrganicData':
             # LOG.log(f"Event SellOrganicData", "INFO")
             update_bio_data(entry)
-        case 'SAASignalsFound':
-            update_bio_saa(entry)
+
+        case 'FSDJump':
+            update_jump(entry)
+        case 'FSSDiscoveryScan':
+            update_discovery_scan(entry)
         case 'FSSBodySignals':
             update_bio_fss(entry)
+        case 'SAASignalsFound':
+            update_bio_saa(entry)
+
         case 'ScanOrganic':
             update_bio_sample(entry)
         case 'MiningRefined':
             update_mining_refined()
-        case 'FSDJump':
-            update_jump(entry)
         case 'SearchAndRescue':
             update_rescue(entry)
         case 'MissionAccepted':
@@ -1777,3 +1756,26 @@ def journal_entry(cmdr: str, is_beta: bool, system: str,
             update_docked(entry)
         case 'Died':
             update_died(entry)
+        case 'SupercruiseEntry':
+            update_supercruiseentry(entry)
+
+
+def titan_state():
+    try:
+        req = requests.get(url='https://dcoh.watch/api/v1/Overwatch/Titans')
+        data = req.json()
+        titans = data['maelstroms']
+
+        for titan in titans:
+
+            if titan['name'] == "Indra":
+                overlay_titan = titan['name']
+                overlay_titan += '  Hearts: ' + str(titan['heartsRemaining'])
+                overlay_titan += '  Progress: {:.4f}'.format(titan['heartProgress']*100)
+                plug.overlay.display('inaraprogress_titan', overlay_titan, plug.overlay_info_x.get(), 
+                              plug.overlay_info_y.get() + 50, plug.overlay_color.get(), 'large')
+
+    except (requests.RequestException, requests.JSONDecodeError):
+        LOG.log('Failed to load Titans', "INFO")
+        return ''    
+

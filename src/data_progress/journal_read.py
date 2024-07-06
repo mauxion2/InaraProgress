@@ -82,6 +82,7 @@ class This:
         self.journal_dir_path = expanduser(dir_path)
         self.journal_run: bool = False
         self.curent_system: int = 0
+        self.pos_null: list[float] = [0.0, 0.0, 0.0]
 
 
 this = This()
@@ -149,16 +150,21 @@ class ParseJournal:
         event_type = entry['event'].lower()
         match event_type:
 
+            case 'fssdiscoveryscan':
+                this.curent_system = entry["SystemAddress"]
+                db.check_system(this.curent_system, entry["SystemName"], this.pos_null, False)
+                db.set_system_bc(this.curent_system, entry["BodyCount"])
+
             case 'supercruiseentry':
                 this.curent_system = entry["SystemAddress"]
-                db.check_system(this.curent_system, entry["StarSystem"])
+                db.check_system(this.curent_system, entry["StarSystem"], this.pos_null, False)
 
             case 'fsdjump':
                 this.curent_system = entry["SystemAddress"]
                 exploration_jumps = db.get_setting('InaraProgress_exploration_Jumps')
                 exploration_jumps += 1
                 db.set_setting('InaraProgress_exploration_Jumps', exploration_jumps)
-                if not db.check_system(this.curent_system, entry["StarSystem"]):
+                if not db.check_system(this.curent_system, entry["StarSystem"], entry["StarPos"], True):
                     exploration_visited = db.get_system_list_count()
                     db.set_setting('InaraProgress_exploration_Visited', exploration_visited)
 
@@ -202,6 +208,8 @@ class ParseJournal:
                     else:
                         bio_variant = 'unknown'    
                     bio_cost = db.get_bio_cost(bio_codex)
+                    exobiologist_Unique = data_db.get_bio_unique_count()
+                    db.set_setting("InaraProgress_exobiologist_Unique", exobiologist_Unique)
                     db.set_bio(timestamp, system_id, db.name_system(system_id),
                                planet_id, db.name_planet(system_id, planet_id), bio_name, bio_variant, bio_codex)
                     db.set_sell_bio(timestamp, system_id, planet_id, bio_codex, bio_name, bio_variant, bio_cost)
@@ -209,8 +217,13 @@ class ParseJournal:
             case 'sellorganicdata':                    
                 bio_data_tab = entry["BioData"]
                 bio_data_tab_len = len(bio_data_tab)
-                db.set_sell_date_died(timestamp, bio_data_tab_len, '', '', '')
                 sell_bio_count = db.get_sell_bio_count()
+                if bio_data_tab_len > sell_bio_count:
+                    text_error = 'ERROR table DB len: {}'.format(sell_bio_count)
+                else:
+                    text_error = ''    
+                db.set_sell_date_died(timestamp, bio_data_tab_len, text_error, '', '')
+                
                 exobiologist_organic = db.get_setting('InaraProgress_exobiologist_Organic')
                 exobiologist_organic += bio_data_tab_len
                 db.set_setting("InaraProgress_exobiologist_Organic", exobiologist_organic)                
@@ -227,10 +240,11 @@ class ParseJournal:
                             bio_variant = bio_variant.replace(" - ", "")
                         else:
                             bio_variant = 'unknown'    
-                        bio_cost = bio["Value"]
-                        db.delete_sell_bio(bio_codex, bio_name, bio_variant, bio_cost)
+                        db.delete_sell_bio(bio_codex, bio_name, bio_variant)
                 elif bio_data_tab_len > sell_bio_count:
-                    LOG.log(f"ERROR bio data sell table larger than table DB", "INFO")
+                    text_error = 'T {} Count Bio {} Count DB {}\n '.format(timestamp, bio_data_tab_len, sell_bio_count)
+                    text_error += 'ERROR bio data sell table larger than table DB'
+                    LOG.log(text_error, "INFO")
 
             case 'died':
                 if 'KillerName' in entry:
@@ -274,7 +288,7 @@ class ParseJournal:
 
                         if time_patch_14_02 < time_event: 
 
-                            if reward == UP1402_SCOUT1_TARG or reward == UP1402_SCOUT2_TARG:
+                            if reward == UP1402_SCOUT1_TARG or reward == UP1402_SCOUT2_TARG or reward == _SCOUT_TARG:
                                 targ_name = 'Scout'
 
                             if reward == UP1402_HUNTER_TARG:
@@ -328,7 +342,7 @@ class ParseJournal:
 
             case 'docked':
                 this.curent_system = entry["SystemAddress"]
-                db.check_system(this.curent_system, entry["StarSystem"])                
+                db.check_system(this.curent_system, entry["StarSystem"], this.pos_null, False)
                 if entry["StationType"] == "FleetCarrier":
                     db.set_docked_fleet(entry["MarketID"])
 
@@ -416,8 +430,9 @@ def get_filepaths(directory):
 
     list_of_tuples = create_list_of_tuples(timestamp, file_paths)
     list_of_tuples.sort()
+    journal_files: list[Path] = [journal[1] for journal in list_of_tuples]
 
-    return list_of_tuples
+    return journal_files
 
 
 def parse_journal(journal_path: Path) -> int:
@@ -425,7 +440,7 @@ def parse_journal(journal_path: Path) -> int:
     return ParseJournal().load_journal(journal_path)
 
 
-def clear_db(session1: Session):
+def clear_db(session: Session):
 
     db.drop_table('journal_log')
     db.drop_table('mission')
@@ -443,10 +458,7 @@ def clear_db(session1: Session):
     db.drop_table('sell_date_died')
     db.db_create()
 
-    """"
-    session1.query(db.JournalLog).delete()
-    session1.commit()
-    """
+    db.clear_bio_unique()
 
 
 def parse_journals(cl_db: bool) -> None:
@@ -481,7 +493,7 @@ def journal_works(session1: Session) -> None:
         """
         for f in full_file_paths:
 
-            parse_journal(f[1])
+            parse_journal(f)
 
         db.clear_lost_bio()
         db.export_bio_lost_sumary()

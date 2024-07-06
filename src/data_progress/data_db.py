@@ -66,7 +66,7 @@ class Mission(Base):
 
     MissionID: Mapped[int] = mapped_column(primary_key=True, default='0')
     PassengerCount: Mapped[int] = mapped_column(default='0')
-    PassengerVIPs: Mapped[bool] = mapped_column(default=False)
+    PassengerVIPs: Mapped[bool] = mapped_column(default=False, server_default=text('FALSE'))
     Reward: Mapped[int] = mapped_column(default='0')
 
 
@@ -160,7 +160,11 @@ class SystemList(Base):
     __tablename__ = 'system_list'
 
     system_id: Mapped[int] = mapped_column(primary_key=True)
-    system_name: Mapped[str] = mapped_column(default='')
+    system_name: Mapped[str] = mapped_column(String(64), default='')
+    system_pos_x: Mapped[float] = mapped_column(default=0.0, server_default=text('0.0'))
+    system_pos_y: Mapped[float] = mapped_column(default=0.0, server_default=text('0.0'))
+    system_pos_z: Mapped[float] = mapped_column(default=0.0, server_default=text('0.0'))
+    body_count: Mapped[int] = mapped_column(default=1, server_default=text('1'))
 
 
 class ThargoidList(Base):
@@ -426,15 +430,28 @@ def get_planet_biosaa_count() -> int:
     return this.sql_session.query(func.count(PlanetBioSAA.id)).scalar()
 
 
-def check_system(system_id: int, system_name: str) -> bool:
+def check_system(system_id: int, system_name: str, pos_system: list[float], add_pos: bool = False) -> bool:
     system_check = True
     data: SystemList = this.sql_session.scalar(select(SystemList).where(SystemList.system_id == system_id))
     if not data:
         data = SystemList(system_id=system_id, system_name=system_name)
         this.sql_session.add(data)
-        this.sql_session.commit()
         system_check = False
+    if add_pos:
+        data.system_pos_x = pos_system[0]
+        data.system_pos_y = pos_system[1]
+        data.system_pos_z = pos_system[2]
+
+    this.sql_session.commit()
     return system_check
+
+
+def set_system_bc(system_id: int, body_count: int):
+    data: SystemList = this.sql_session.scalar(select(SystemList).where(SystemList.system_id == system_id))
+    if data:
+        stmt = update(SystemList).where(SystemList.system_id == system_id).values(body_count=body_count)
+        this.sql_session.execute(stmt)
+        this.sql_session.commit()
 
 
 def get_system_list_count() -> int:
@@ -580,7 +597,7 @@ def get_bio_unknown_count() -> int:
     return this.sql_session.query(func.count(BioShell.bio_variant).filter(BioShell.bio_variant == 'unknown')).scalar()
 
 
-def delete_sell_bio(bio_codex: str, bio_name: str, bio_variant: str, bio_cost: int):
+def delete_sell_bio(bio_codex: str, bio_name: str, bio_variant: str):
     unknown_count = get_bio_unknown_count()
     if unknown_count > 0:
         stmt = this.sql_session.query(BioShell).filter_by(bio_codex=bio_codex, bio_name=bio_name).first()
@@ -607,6 +624,11 @@ def get_bio_unique_count() -> int:
 
     return this.sql_session.query(func.count(BioListCost.bio_find).filter(BioListCost.bio_find == 1)).scalar()
 
+
+def clear_bio_unique():
+    this.sql_session.query(BioListCost).filter(BioListCost.bio_find == 1).update({BioListCost.bio_find: 0})
+    this.sql_session.commit()
+    
 
 def finish_sell_bio():
     this.sql_session.query(BioShell).delete()
