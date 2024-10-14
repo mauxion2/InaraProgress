@@ -30,3 +30,5 @@ Allows tracking of Elite Dangrous ranks and [INARA](https://inara.cz/) awards.
  In Dir `%LOCALAPPDATA%\EDMarketConnector\data_lost\bio_*death timestamp*.txt` 
 
 Trade Profit - Shows profits counting to rank progress
+Display progress Titan - select titan in options
+Display progress Community Goals - read progress from journal
