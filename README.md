@@ -8,6 +8,7 @@ Allows tracking of Elite Dangrous ranks and [INARA](https://inara.cz/) awards.
 
 # Image
 <img src="InaraProgress.jpg">
+<img src="InaraProgress_2.jpg">
 
 <img src="Titan Progress.jpg">
 
