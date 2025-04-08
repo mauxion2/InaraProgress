@@ -18,30 +18,32 @@ TODO
 import math
 import semantic_version
 import requests
-import datetime
+import datetime as dti
 from typing import Any, MutableMapping, Mapping
 
 
 # TKinter imports
 import tkinter as tk
 from tkinter import ttk, colorchooser as tkColorChooser
+from tkinter.messagebox import showinfo
 
 # EDMC imports
 import myNotebook as Nb
 from config import config
 from theme import theme
 from ttkHyperlinkLabel import HyperlinkLabel
+from monitor import monitor
 
 # Database objects
-from sqlalchemy.orm import Session
-import sqlalchemy as sa
+# from data_progress.sqlalchemy.orm import Session
+
 
 from data_progress import data_db
 from data_progress.journal_read import parse_journals
 
 # Local imports
 from inara_progress import const, overlay
-from inara_progress.progresslog import ProgressLog
+from inara_progress.progresslog import get_progress_log
 from inara_progress.status_flags import StatusFlags2  # , StatusFlags
 from inara_progress.findpr import check_limit, check_threshold, check_tier
 
@@ -98,10 +100,15 @@ class InaraProgress:
         self.overlay = overlay.Overlay()
         self.use_overlay: tk.BooleanVar | None = None
         self.overlay_color: tk.StringVar | None = None
+        self.overlay_color_info: tk.StringVar | None = None
+        self.overlay_color_titans: tk.StringVar | None = None
         self.overlay_anchor_x: tk.IntVar | None = None
         self.overlay_anchor_y: tk.IntVar | None = None
         self.overlay_info_x: tk.IntVar | None = None
-        self.overlay_info_y: tk.IntVar | None = None   
+        self.overlay_info_y: tk.IntVar | None = None
+        self.overlay_titans_x: tk.IntVar | None = None
+        self.overlay_titans_y: tk.IntVar | None = None 
+        self.titan_curent: tk.StringVar | None = None  
 
         self.parent: tk.Frame | None = None
         self.frame: tk.Frame | None = None
@@ -121,9 +128,9 @@ class InaraProgress:
         self.show_Trader: tk.BooleanVar | None = None
         self.show_Captain: tk.BooleanVar | None = None
         self.show_dh_progress: tk.BooleanVar | None = None
-        self.clear_data_db: tk.BooleanVar | None = None
         self.show_titan: tk.BooleanVar | None = None
-
+        self.show_community: tk.BooleanVar | None = None
+        self.selected_parsing: tk.StringVar | None = None
 
         # Ranks
         self.combat: int = 0
@@ -168,6 +175,8 @@ class InaraProgress:
         self.rescue_Traded: int = 0
         self.rescue_FireOut: int = 0
         self.rescue_Reboot: int = 0
+        self.rescue_passenger: int = 0
+        self.rescue_pods: int = 0
         self.exploration_Distance: int = 0
         self.exploration_Distance_f: float = 0.0
         self.exploration_Jumps: int = 0
@@ -187,6 +196,7 @@ class InaraProgress:
         self.thargoid_hydra: int = 0
         self.thargoid_scout: int = 0
         self.thargoid_hunter: int = 0
+        self.thargoid_orthrus: int = 0
 
         # Profit All Trade
         self.trade_profit: int = 0
@@ -194,18 +204,27 @@ class InaraProgress:
         self.bio_profit: int = 0
         self.bio_sell: int = 0
         self.bio_find: int = 0
+        self.codex_voucher: int = 0 
+        self.codex_count: int = 0
+        self.codex_entry: int = 0
         self.miner_profit: int = 0
 
         self.wyd_il: int = 0
+        self.cur_station_name: str = '' 
         self.curent_system: int = 0
         self.pos_null: list[float] = [0.0, 0.0, 0.0]
+        self.timestamp_last: dti = dti.datetime(2003, 1, 1, 1, 0, 0)
+        self.redeemrvoucher_combat_on_foot: bool = False
+        self.redeemrvoucher_combat: bool = False
+        self.open_map: bool = True
+        self.text_community: str = ''
 
         self.frame = None
         self.labels = dict()
 
 
 plug = InaraProgress()
-LOG = ProgressLog()
+LOG = get_progress_log()
 
 
 def setup_frame_new():
@@ -313,10 +332,10 @@ def setup_frame_new():
 
         if plug.show_combat_stats.get():
             # Bounties, ToSell, Sum
-            tk.Label(frame_p, text="Inara (Tier)", justify="center").grid(row=1, column=0)
-            tk.Label(frame_p, text="  Bounty").grid(row=1, column=1, sticky=tk.W)
-            tk.Label(frame_p, text="To Sell").grid(row=1, column=2, sticky=tk.W)
-            tk.Label(frame_p, text="Sumary Profit").grid(row=1, column=3, sticky=tk.W)
+            # tk.Label(frame_p, text="Inara (Tier)", justify="center").grid(row=1, column=0)
+            # tk.Label(frame_p, text="  Bounty").grid(row=1, column=1, sticky=tk.W)
+            # tk.Label(frame_p, text="To Sell").grid(row=1, column=2, sticky=tk.W)
+            # tk.Label(frame_p, text="Sumary Profit").grid(row=1, column=3, sticky=tk.W)
             plug.labels["bounty"][0].grid(row=5, column=0, sticky=tk.W)  # Hunter Bounties
             plug.labels["bounty"][1].grid(row=5, column=1, sticky=tk.W)
             plug.labels["bounty"][2].grid(row=5, column=2, sticky=tk.W)
@@ -443,11 +462,18 @@ def setup_frame_new():
         theme.update(widget)
 
 
-def update_color(cl: int, val: int, tab_disp: tk.Label) -> tk.Label:
+def update_color(tier: int, cl: int, val: int, tab_disp: tk.Label, color: str = "green") -> tk.Label:
     style = ttk.Style()
+ 
+    if tier == 5:
+        color = "yellow"
     if cl <= val:
-        tab_disp.config(fg="green")
+        tab_disp.config(fg=color)
     else:
+        if tier == 5:
+            tab_disp.config(fg="yellow")
+            return tab_disp
+
         thm = config.get_int("theme")
         if thm == 0:
             tab_disp.config(fg=style.lookup('TLabel', 'foreground'))
@@ -473,16 +499,26 @@ def update_stats():
 
 def update_display(overlay_info: str = "", overlay_info_change: bool = False):
     if plug.show_trade_stats.get():
-        plug.labels["profit"][0]["text"] = "{:,} Cr".format(plug.trade_profit)
+        plug.labels["profit"][0]["text"] = "{:,} Cr".format(data_db.get_trade_profit())
         plug.labels["exp_data"][0]["text"] = "{:,} Cr".format(plug.explore_profit)
         plug.labels["bio_data"][0]["text"] = "{:,} Cr".format(plug.bio_profit)
+        plug.labels["bio_bonus"] = (update_color(0, 1, plug.bio_find, plug.labels["bio_bonus"][0], "red"),)
         plug.labels["bio_bonus"][0]["text"] = "{} / {:,} Cr".format(plug.bio_find, plug.bio_sell)
 
     if plug.show_combat_stats.get():
         plug.tab_values.clear()
         plug.tab_values[0] = plug.hunting_bonds
-
-        plug.labels["bounty"][0]["text"] = "Hunter (tier {}):".format(check_tier(const.Hunter_Inara, plug.tab_values))
+        min_tier = check_tier(const.Hunter_Inara, plug.tab_values)
+        mer1 = check_limit(const.Hunter_Inara, "Bonds")
+        if min_tier == 5:
+            d_h = math.floor(plug.hunting_bonds / mer1)
+        plug.labels["bounty"] = (update_color(min_tier, 1, 0, plug.labels["bounty"][0]),
+                                 update_color(min_tier, mer1, plug.hunting_bonds, plug.labels["bounty"][1]),
+                                 update_color(0, 1, plug.hunting_kill, plug.labels["bounty"][2], "red"),
+                                 plug.labels["bounty"][3],
+                                 )
+        text_dh = str(min_tier) if min_tier < 5 else str(min_tier)+') (x'+str(d_h)
+        plug.labels["bounty"][0]["text"] = "Hunter (tier {}):".format(text_dh)
         plug.labels["bounty"][1]["text"] = "{:,} / {:,}".format(plug.hunting_bonds,
                                                                 check_threshold(plug.hunting_bonds,
                                                                                 const.Hunter_Inara, "Bonds")
@@ -490,6 +526,11 @@ def update_display(overlay_info: str = "", overlay_info_change: bool = False):
         plug.labels["bounty"][2]["text"] = "{} / {:,} Cr".format(plug.hunting_kill, plug.hunting_bonds_tosell)
         plug.labels["bounty"][3]["text"] = "{:,} Cr".format(plug.hunting_bonds_profit)
 
+        plug.labels["bond"] = (plug.labels["bond"][0],
+                               plug.labels["bond"][1],
+                               update_color(0, 1, plug.kill_bonds, plug.labels["bond"][2], "red"),
+                               plug.labels["bond"][3],
+                               )
         plug.labels["bond"][0]["text"] = "{}".format("Combat OnFoot:" if plug.On_Foot else "Combat :")
         plug.labels["bond"][1]["text"] = f"[{plug.combat_bonds}]   [{plug.soldier_bonds}]"
         plug.labels["bond"][2]["text"] = "{} / {:,} Cr".format(plug.kill_bonds, plug.combat_last_sum)
@@ -498,7 +539,17 @@ def update_display(overlay_info: str = "", overlay_info_change: bool = False):
         bonds_sum = plug.combat_bonds + plug.soldier_bonds
         plug.tab_values.clear()
         plug.tab_values[0] = bonds_sum
-        plug.labels["cbond"][0]["text"] = "Soldier (tier {}) :".format(check_tier(const.Soldier_Inara, plug.tab_values))
+        min_tier = check_tier(const.Soldier_Inara, plug.tab_values)
+        mer1 = check_limit(const.Soldier_Inara, "Bonds")
+        if min_tier == 5:
+            d_h = math.floor(bonds_sum / mer1)
+        plug.labels["cbond"] = (update_color(min_tier, 1, 0, plug.labels["cbond"][0]),
+                                update_color(min_tier, mer1, bonds_sum, plug.labels["cbond"][1]),
+                                update_color(0, 1, plug.kill_bonds_foot, plug.labels["cbond"][2], "red"),
+                                plug.labels["cbond"][3],
+                                ) 
+        text_dh = str(min_tier) if min_tier < 5 else str(min_tier)+') (x'+str(d_h)       
+        plug.labels["cbond"][0]["text"] = "Soldier (tier {}) :".format(text_dh)
         plug.labels["cbond"][1]["text"] = "{:,} / {:,}".format(bonds_sum,
                                                                check_threshold(bonds_sum,
                                                                                const.Soldier_Inara, "Bonds")
@@ -514,11 +565,16 @@ def update_display(overlay_info: str = "", overlay_info_change: bool = False):
         min_tier = check_tier(const.Traveller_Inara, plug.tab_values)
         mer1 = check_limit(const.Traveller_Inara, "Distance", min_tier)
         mer2 = check_limit(const.Traveller_Inara, "Jumps", min_tier)
-        plug.labels["trav_I"] = (plug.labels["trav_I"][0],
-                                 update_color(mer1, plug.exploration_Distance, plug.labels["trav_I"][1]),
-                                 update_color(mer2, plug.exploration_Jumps, plug.labels["trav_I"][2])
+        if min_tier == 5:
+            x1 = math.floor(plug.exploration_Distance / mer1)
+            x2 = math.floor(plug.exploration_Jumps / mer2)
+            d_h = min(x1, x2)
+        plug.labels["trav_I"] = (update_color(min_tier, 1, 0, plug.labels["trav_I"][0]),
+                                 update_color(min_tier, mer1, plug.exploration_Distance, plug.labels["trav_I"][1]),
+                                 update_color(min_tier, mer2, plug.exploration_Jumps, plug.labels["trav_I"][2])
                                  )
-        plug.labels["trav_I"][0]["text"] = "Traveller (tier {}) :".format(min_tier)
+        text_dh = str(min_tier) if min_tier < 5 else str(min_tier)+') (x'+str(d_h)
+        plug.labels["trav_I"][0]["text"] = "Traveller (tier {}) :".format(text_dh)
         plug.labels["trav_I"][1]["text"] = "Distance: {:,}/{:,}".format(plug.exploration_Distance, mer1)
         plug.labels["trav_I"][2]["text"] = "Jumps: {:,}/{:,}".format(plug.exploration_Jumps, mer2)
 
@@ -529,11 +585,16 @@ def update_display(overlay_info: str = "", overlay_info_change: bool = False):
         min_tier = check_tier(const.Explorer_Inara, plug.tab_values)
         mer1 = check_limit(const.Explorer_Inara, "Visited", min_tier)
         mer2 = check_limit(const.Explorer_Inara, "L3scans", min_tier)
-        plug.labels["exp_I"] = (plug.labels["exp_I"][0],
-                                update_color(mer1, plug.exploration_Visited, plug.labels["exp_I"][1]),
-                                update_color(mer2, plug.exploration_L3scan, plug.labels["exp_I"][2])
+        if min_tier == 5:
+            x1 = math.floor(plug.exploration_Visited / mer1)
+            x2 = math.floor(plug.exploration_L3scan / mer2)
+            d_h = min(x1, x2)
+        plug.labels["exp_I"] = (update_color(min_tier, 1, 0, plug.labels["exp_I"][0]),
+                                update_color(min_tier, mer1, plug.exploration_Visited, plug.labels["exp_I"][1]),
+                                update_color(min_tier, mer2, plug.exploration_L3scan, plug.labels["exp_I"][2])
                                 )
-        plug.labels["exp_I"][0]["text"] = "Explorer (tier {}) :".format(min_tier)
+        text_dh = str(min_tier) if min_tier < 5 else str(min_tier)+') (x'+str(d_h)
+        plug.labels["exp_I"][0]["text"] = "Explorer (tier {}) :".format(text_dh)
         plug.labels["exp_I"][1]["text"] = "Visited: {:,}/{:,}".format(plug.exploration_Visited, mer1)
         plug.labels["exp_I"][2]["text"] = "L3 Scans: {:,}/{:,}".format(plug.exploration_L3scan, mer2)
  
@@ -544,11 +605,16 @@ def update_display(overlay_info: str = "", overlay_info_change: bool = False):
         min_tier = check_tier(const.Trader_Inara, plug.tab_values)
         mer1 = check_limit(const.Trader_Inara, "Commodities", min_tier)
         mer2 = check_limit(const.Trader_Inara, "Market", min_tier)
-        plug.labels["trad_I"] = (plug.labels["trad_I"][0],
-                                 update_color(mer1, plug.trading_Resources, plug.labels["trad_I"][1]),
-                                 update_color(mer2, plug.trading_Markets, plug.labels["trad_I"][2])
+        if min_tier == 5:
+            x1 = math.floor(plug.trading_Resources / mer1)
+            x2 = math.floor(plug.trading_Markets / mer2)
+            d_h = min(x1, x2)
+        plug.labels["trad_I"] = (update_color(min_tier, 1, 0, plug.labels["trad_I"][0]),
+                                 update_color(min_tier, mer1, plug.trading_Resources, plug.labels["trad_I"][1]),
+                                 update_color(min_tier, mer2, plug.trading_Markets, plug.labels["trad_I"][2])
                                  )
-        plug.labels["trad_I"][0]["text"] = "Trader (tier {}) :".format(min_tier)
+        text_dh = str(min_tier) if min_tier < 5 else str(min_tier)+') (x'+str(d_h)
+        plug.labels["trad_I"][0]["text"] = "Trader (tier {}) :".format(text_dh)
         plug.labels["trad_I"][1]["text"] = "Resources: {:,}/{:,}".format(plug.trading_Resources, mer1)
         plug.labels["trad_I"][2]["text"] = "Market: {:,}/{:,}".format(plug.trading_Markets, mer2)
 
@@ -559,11 +625,16 @@ def update_display(overlay_info: str = "", overlay_info_change: bool = False):
         min_tier = check_tier(const.Captain_Inara, plug.tab_values)
         mer1 = check_limit(const.Captain_Inara, "Passengers", min_tier)
         mer2 = check_limit(const.Captain_Inara, "VIPs", min_tier)
-        plug.labels["capt_I"] = (plug.labels["capt_I"][0],
-                                 update_color(mer1, plug.passengers_Delivered, plug.labels["capt_I"][1]),
-                                 update_color(mer2, plug.passengers_VIP, plug.labels["capt_I"][2])
+        if min_tier == 5:
+            x1 = math.floor(plug.passengers_Delivered / mer1)
+            x2 = math.floor(plug.passengers_VIP / mer2)
+            d_h = min(x1, x2)
+        plug.labels["capt_I"] = (update_color(min_tier, 1, 0, plug.labels["capt_I"][0]),
+                                 update_color(min_tier, mer1, plug.passengers_Delivered, plug.labels["capt_I"][1]),
+                                 update_color(min_tier, mer2, plug.passengers_VIP, plug.labels["capt_I"][2])
                                  )
-        plug.labels["capt_I"][0]["text"] = "Captain (tier {}) :".format(min_tier)
+        text_dh = str(min_tier) if min_tier < 5 else str(min_tier)+') (x'+str(d_h)
+        plug.labels["capt_I"][0]["text"] = "Captain (tier {}) :".format(text_dh)
         plug.labels["capt_I"][1]["text"] = "Tourists: {:,}/{:,}".format(plug.passengers_Delivered, mer1)
         plug.labels["capt_I"][2]["text"] = "VIPs : {:,}/{:,}".format(plug.passengers_VIP, mer2)
     #  End Tabela 4x3
@@ -577,12 +648,18 @@ def update_display(overlay_info: str = "", overlay_info_change: bool = False):
         mer1 = check_limit(const.Exobiologist_Inara, "Organic", min_tier)
         mer2 = check_limit(const.Exobiologist_Inara, "Planets", min_tier)
         mer3 = check_limit(const.Exobiologist_Inara, "Unique", min_tier)
-        plug.labels["bio_I"] = (plug.labels["bio_I"][0],
-                                update_color(mer1, plug.exobiologist_Organic, plug.labels["bio_I"][1]),
-                                update_color(mer2, plug.exobiologist_Planets, plug.labels["bio_I"][2]),
-                                update_color(mer3, plug.exobiologist_Unique, plug.labels["bio_I"][3])
+        if min_tier == 5:
+            x1 = math.floor(plug.exobiologist_Organic / mer1)
+            x2 = math.floor(plug.exobiologist_Planets / mer2)
+            d_h = min(x1, x2)
+
+        plug.labels["bio_I"] = (update_color(min_tier, 1, 0, plug.labels["bio_I"][0]),
+                                update_color(min_tier, mer1, plug.exobiologist_Organic, plug.labels["bio_I"][1]),
+                                update_color(min_tier, mer2, plug.exobiologist_Planets, plug.labels["bio_I"][2]),
+                                update_color(min_tier, mer3, plug.exobiologist_Unique, plug.labels["bio_I"][3])
                                 )
-        plug.labels["bio_I"][0]["text"] = "Exobiologist (tier {}) :".format(min_tier)
+        text_dh = str(min_tier) if min_tier < 5 else str(min_tier)+') (x'+str(d_h)
+        plug.labels["bio_I"][0]["text"] = "Exobiologist (tier {}) :".format(text_dh)
         plug.labels["bio_I"][1]["text"] = "Organic: {:,}/{:,}".format(plug.exobiologist_Organic, mer1)
         plug.labels["bio_I"][2]["text"] = "Planets: {:,}/{:,}".format(plug.exobiologist_Planets, mer2)
         plug.labels["bio_I"][3]["text"] = "Unique: {:,}/{:,}".format(plug.exobiologist_Unique, mer3)
@@ -596,57 +673,89 @@ def update_display(overlay_info: str = "", overlay_info_change: bool = False):
         mer1 = check_limit(const.Mercenary_Inara, "Swon", min_tier)
         mer2 = check_limit(const.Mercenary_Inara, "Hwon", min_tier)
         mer3 = check_limit(const.Mercenary_Inara, "settlements", min_tier)
-        plug.labels["mer_I"] = (plug.labels["mer_I"][0],
-                                update_color(mer1, plug.soldier_Total_Wins, plug.labels["mer_I"][1]),
-                                update_color(mer2, plug.soldier_High_Wins, plug.labels["mer_I"][2]),
-                                update_color(mer3, plug.soldier_Settlement, plug.labels["mer_I"][3])
+        if min_tier == 5:
+            x1 = math.floor(plug.soldier_Total_Wins / mer1)
+            x2 = math.floor(plug.soldier_High_Wins / mer2)
+            x3 = math.floor(plug.soldier_Settlement / mer3)
+            d_h = min(x1, x2, x3)
+        plug.labels["mer_I"] = (update_color(min_tier, 1, 0, plug.labels["mer_I"][0]),
+                                update_color(min_tier, mer1, plug.soldier_Total_Wins, plug.labels["mer_I"][1]),
+                                update_color(min_tier, mer2, plug.soldier_High_Wins, plug.labels["mer_I"][2]),
+                                update_color(min_tier, mer3, plug.soldier_Settlement, plug.labels["mer_I"][3])
                                 )
-        plug.labels["mer_I"][0]["text"] = "Mercenary (tier {}) :".format(min_tier)
+        text_dh = str(min_tier) if min_tier < 5 else str(min_tier)+') (x'+str(d_h)
+        plug.labels["mer_I"][0]["text"] = "Mercenary (tier {}) :".format(text_dh)
         plug.labels["mer_I"][1]["text"] = "Total Wins: {:,}/{:,}".format(plug.soldier_Total_Wins, mer1)
         plug.labels["mer_I"][2]["text"] = "High Wins: {:,}/{:,}".format(plug.soldier_High_Wins, mer2)
         plug.labels["mer_I"][3]["text"] = "Colony A.D.: {:,}/{:,}".format(plug.soldier_Settlement, mer3)
 
     if plug.show_samaritan_progress.get():
         plug.tab_values.clear()
-        plug.tab_values[0] = plug.rescue_Traded
+        all_rescue = plug.rescue_Traded + plug.rescue_passenger + plug.rescue_pods
+        plug.tab_values[0] = all_rescue
         plug.tab_values[1] = plug.rescue_Reboot
         plug.tab_values[2] = plug.rescue_FireOut
         min_tier = check_tier(const.Samaritan_Inara, plug.tab_values)
         mer1 = check_limit(const.Samaritan_Inara, "Rescued", min_tier)
         mer2 = check_limit(const.Samaritan_Inara, "Rebooted", min_tier)
         mer3 = check_limit(const.Samaritan_Inara, "Fires", min_tier)
-        plug.labels["res_I"] = (plug.labels["res_I"][0],
-                                update_color(mer1, plug.rescue_Traded, plug.labels["res_I"][1]),
-                                update_color(mer2, plug.rescue_Reboot, plug.labels["res_I"][2]),
-                                update_color(mer3, plug.rescue_FireOut, plug.labels["res_I"][3])
+        if min_tier == 5:
+            x1 = math.floor(all_rescue / mer1)
+            x2 = math.floor(plug.rescue_Reboot / mer2)
+            x3 = math.floor(plug.rescue_FireOut / mer3)
+            d_h = min(x1, x2, x3)
+        plug.labels["res_I"] = (update_color(min_tier, 1, 0, plug.labels["res_I"][0]),
+                                update_color(min_tier, mer1, all_rescue, plug.labels["res_I"][1]),
+                                update_color(min_tier, mer2, plug.rescue_Reboot, plug.labels["res_I"][2]),
+                                update_color(min_tier, mer3, plug.rescue_FireOut, plug.labels["res_I"][3])
                                 )
-        plug.labels["res_I"][0]["text"] = "Samaritan (tier {}) :".format(min_tier)
-        plug.labels["res_I"][1]["text"] = "Rescued: {:,}/{:,}".format(plug.rescue_Traded, mer1)
+        text_dh = str(min_tier) if min_tier < 5 else str(min_tier)+') (x'+str(d_h)
+        plug.labels["res_I"][0]["text"] = "Samaritan (tier {}) :".format(text_dh)
+        plug.labels["res_I"][1]["text"] = "Rescued: {:,}/{:,}".format(all_rescue, mer1)
         plug.labels["res_I"][2]["text"] = "Reboot: {:,}/{:,}".format(plug.rescue_Reboot, mer2)
         plug.labels["res_I"][3]["text"] = "FireOut: {:,}/{:,}".format(plug.rescue_FireOut, mer3)
 
     if plug.show_miner_progress.get():
         plug.tab_values.clear()
         plug.tab_values[0] = plug.miner_refined
-        plug.labels["mdh"][0]["text"] = "Miner (tier {}):".format(check_tier(const.Miner_Inara, plug.tab_values))
+        min_tier = check_tier(const.Miner_Inara, plug.tab_values)
+        if min_tier == 5:
+            mer1 = check_limit(const.Miner_Inara, "Refined")
+            d_h = math.floor(plug.miner_refined / mer1)
+        plug.labels["mdh"] = (update_color(min_tier, 1, 0, plug.labels["mdh"][0]),
+                              plug.labels["mdh"][1],
+                              plug.labels["mdh"][2],
+                              plug.labels["mdh"][3]
+                              )
+        text_dh = str(min_tier) if min_tier < 5 else str(min_tier)+') (x'+str(d_h)
+        plug.labels["mdh"][0]["text"] = "Miner (tier {}):".format(text_dh)
         plug.labels["mdh"][1]["text"] = "{:,}/{:,}".format(plug.miner_refined,
                                                            check_threshold(plug.miner_refined,
                                                                            const.Miner_Inara, "Refined")
                                                            )
     
     if plug.show_dh_progress.get():
+        d_hero = update_d_hero()
         plug.tab_values.clear()
-        plug.tab_values[0] = plug.Zero
-        plug.labels["mdh"][2]["text"] = "Decorated Hero (tier {}):".format(check_tier(const.Hero_Inara,
-                                                                                      plug.tab_values)
-                                                                           )
-        plug.labels["mdh"][3]["text"] = "{:,}/{:,}".format(plug.Zero, 
-                                                           check_threshold(plug.Zero, const.Hero_Inara, "Tier_5"))
+        plug.tab_values[0] = d_hero
+        min_tier = check_tier(const.Hero_Inara, plug.tab_values)
+        plug.labels["mdh"] = (plug.labels["mdh"][0],
+                              plug.labels["mdh"][1],
+                              update_color(5, 0, 1, plug.labels["mdh"][2]),
+                              plug.labels["mdh"][3]
+                              )
+        plug.labels["mdh"][2]["text"] = "Decorated Hero (tier {}):".format(min_tier)
+        plug.labels["mdh"][3]["text"] = "{:,}/{:,}".format(d_hero, 
+                                                           check_threshold(d_hero, const.Hero_Inara, "Tier_5"))
 
     if plug.show_thargoid_progress.get():
+        interceptors = (plug.thargoid_cyclops + plug.thargoid_orthrus 
+                        + plug.thargoid_basilisk + plug.thargoid_medusa + plug.thargoid_hydra)
+        thargoid_kills = (plug.thargoid_kill - plug.thargoid_hunter)
+                          # - plug.thargoid_basilisk - plug.thargoid_medusa - plug.thargoid_hydra)
         plug.tab_values.clear()
-        plug.tab_values[0] = plug.thargoid_kill
-        plug.tab_values[1] = plug.thargoid_cyclops
+        plug.tab_values[0] = thargoid_kills
+        plug.tab_values[1] = interceptors
         plug.tab_values[2] = plug.thargoid_basilisk
         plug.tab_values[3] = plug.thargoid_medusa
         plug.tab_values[4] = plug.thargoid_hydra
@@ -656,33 +765,50 @@ def update_display(overlay_info: str = "", overlay_info_change: bool = False):
         mer3 = check_limit(const.Xeno_Inara, "Basilisk", min_tier)
         mer4 = check_limit(const.Xeno_Inara, "Medusa", min_tier)
         mer5 = check_limit(const.Xeno_Inara, "Hydra", min_tier)
-        plug.labels["tharg1"] = (plug.labels["tharg1"][0],
-                                 update_color(mer2, plug.thargoid_cyclops, plug.labels["tharg1"][1]),
-                                 update_color(mer3, plug.thargoid_basilisk, plug.labels["tharg1"][2]),
-                                 update_color(mer4, plug.thargoid_medusa, plug.labels["tharg1"][3])
+        if min_tier == 5:
+            x1 = math.floor(thargoid_kills / mer1)
+            x2 = math.floor(plug.thargoid_cyclops / mer2)
+            x3 = math.floor(plug.thargoid_basilisk / mer3)
+            x4 = math.floor(plug.thargoid_medusa / mer4)
+            x5 = math.floor(plug.thargoid_hydra / mer5)
+            d_h = min(x1, x2, x3, x4, x5)
+        plug.labels["tharg1"] = (update_color(min_tier, 1, 0, plug.labels["tharg1"][0]),
+                                 update_color(min_tier, mer2, interceptors, plug.labels["tharg1"][1]),
+                                 update_color(min_tier, mer3, plug.thargoid_basilisk, plug.labels["tharg1"][2]),
+                                 update_color(min_tier, mer4, plug.thargoid_medusa, plug.labels["tharg1"][3])
                                  )
-        plug.labels["tharg2"] = (update_color(mer1, plug.thargoid_kill, plug.labels["tharg2"][0]),
-                                 update_color(mer5, plug.thargoid_hydra, plug.labels["tharg2"][1]),
+        plug.labels["tharg2"] = (update_color(min_tier, mer1, thargoid_kills, plug.labels["tharg2"][0]),
+                                 update_color(min_tier, mer5, plug.thargoid_hydra, plug.labels["tharg2"][1]),
                                  plug.labels["tharg2"][2],
                                  plug.labels["tharg2"][3]
                                  )
-        plug.labels["tharg1"][0]["text"] = "Xeno-hunter (tier {}) :".format(min_tier)
-        plug.labels["tharg1"][1]["text"] = "Interceptors: {:,}/{:,}".format(plug.thargoid_cyclops, mer2)
+        text_dh = str(min_tier) if min_tier < 5 else str(min_tier)+') (x'+str(d_h)
+        plug.labels["tharg1"][0]["text"] = "Xeno-hunter (tier {}) :".format(text_dh)
+        plug.labels["tharg1"][1]["text"] = "Interceptors: {:,}/{:,}".format(interceptors, mer2)
         plug.labels["tharg1"][2]["text"] = "Basilisk: {:,}/{:,}".format(plug.thargoid_basilisk, mer3)
         plug.labels["tharg1"][3]["text"] = "Medusa: {:,}/{:,}".format(plug.thargoid_medusa, mer4)
 
-        plug.labels["tharg2"][0]["text"] = "Killed: {:,}/{:,}".format(plug.thargoid_kill, mer1)
+        plug.labels["tharg2"][0]["text"] = "Killed: {:,}/{:,}".format(thargoid_kills, mer1)
         plug.labels["tharg2"][1]["text"] = "Hydra: {:,}/{:,}".format(plug.thargoid_hydra, mer5)
         plug.labels["tharg2"][2]["text"] = "Hunter: {}".format(plug.thargoid_hunter)
         plug.labels["tharg2"][3]["text"] = "Scout: {}".format(plug.thargoid_scout)
 
-    if plug.use_overlay.get() and plug.overlay.available():
+    if plug.use_overlay.get() and plug.overlay.available() and monitor.game_running():
     
         overlay_text = "" 
         overlay_text += "BioData To Sell: {} / {:,} Cr \n".format(plug.bio_find, plug.bio_sell)
         overlay_text += "Soldier {} / {:,} Cr\n".format(plug.kill_bonds_foot, plug.soldier_last_sum) 
         overlay_text += "Combat {} / {:,} Cr\n".format(plug.kill_bonds, plug.combat_last_sum)
-        overlay_text += "Hunter {} / {:,} Cr\n".format(plug.hunting_kill, plug.hunting_bonds_tosell)
+        overlay_text += "Hunter {} [{}] / {:,} Cr\n".format(plug.hunting_kill, 
+                                                       data_db.get_bounty_count(), 
+                                                       plug.hunting_bonds_tosell
+                                                       )
+        if plug.codex_entry > 0:
+            overlay_text += "Voucher Codex: new[{}] [{}] {:,}\n".format(plug.codex_entry, 
+                                                                        plug.codex_count, plug.codex_voucher
+                                                                        )
+        else:
+            overlay_text += "Voucher Codex: [{}] {:,}\n".format(plug.codex_count, plug.codex_voucher)    
         # overlay_text += "Trade Profit {:,}\n".format(plug.trade_profit)
         # overlay_text += "Community {:,} \n".format(plug.wyd_il)
 
@@ -692,7 +818,151 @@ def update_display(overlay_info: str = "", overlay_info_change: bool = False):
         if overlay_info_change:
 
             plug.overlay.draw('inaraprogress_info', overlay_info, plug.overlay_info_x.get(), 
-                              plug.overlay_info_y.get(), plug.overlay_color.get(), 'large', 6)
+                              plug.overlay_info_y.get(), plug.overlay_color_info.get(), 'large', 6)
+
+def update_d_hero() -> int:
+    d_h = 0
+
+    # travel
+    plug.tab_values.clear()
+    plug.tab_values[0] = plug.exploration_Distance
+    plug.tab_values[1] = plug.exploration_Jumps
+    min_tier = check_tier(const.Traveller_Inara, plug.tab_values)
+    if min_tier == 5:
+        mer1 = check_limit(const.Traveller_Inara, "Distance")
+        mer2 = check_limit(const.Traveller_Inara, "Jumps")
+        x1 = math.floor(plug.exploration_Distance / mer1)
+        x2 = math.floor(plug.exploration_Jumps / mer2)
+        d_h += min(x1, x2)
+
+    # explorer
+    plug.tab_values.clear()
+    plug.tab_values[0] = plug.exploration_Visited
+    plug.tab_values[1] = plug.exploration_L3scan
+    min_tier = check_tier(const.Explorer_Inara, plug.tab_values)
+    if min_tier == 5:
+        mer1 = check_limit(const.Explorer_Inara, "Visited")
+        mer2 = check_limit(const.Explorer_Inara, "L3scans")
+        x1 = math.floor(plug.exploration_Visited / mer1)
+        x2 = math.floor(plug.exploration_L3scan / mer2)
+        d_h += min(x1, x2)
+
+    # exobiologist
+    plug.tab_values.clear()
+    plug.tab_values[0] = plug.exobiologist_Organic
+    plug.tab_values[1] = plug.exobiologist_Planets
+    plug.tab_values[2] = plug.exobiologist_Unique
+    min_tier = check_tier(const.Exobiologist_Inara, plug.tab_values)
+    if min_tier == 5:
+        mer1 = check_limit(const.Exobiologist_Inara, "Organic")
+        mer2 = check_limit(const.Exobiologist_Inara, "Planets")
+        x1 = math.floor(plug.exobiologist_Organic / mer1)
+        x2 = math.floor(plug.exobiologist_Planets / mer2)
+        d_h += min(x1, x2)
+
+    # soldier
+    bonds_sum = plug.combat_bonds + plug.soldier_bonds
+    plug.tab_values.clear()
+    plug.tab_values[0] = bonds_sum
+    min_tier = check_tier(const.Soldier_Inara, plug.tab_values)
+    if min_tier == 5:
+        mer1 = check_limit(const.Soldier_Inara, "Bonds")
+        d_h += math.floor(bonds_sum / mer1)
+
+    # hunter
+    plug.tab_values.clear()
+    plug.tab_values[0] = plug.hunting_bonds
+    min_tier = check_tier(const.Hunter_Inara, plug.tab_values)
+    if min_tier == 5:
+        mer1 = check_limit(const.Hunter_Inara, "Bonds")
+        d_h += math.floor(plug.hunting_bonds / mer1)
+
+    # mercenary
+    plug.tab_values.clear()
+    plug.tab_values[0] = plug.soldier_Total_Wins
+    plug.tab_values[1] = plug.soldier_High_Wins
+    plug.tab_values[2] = plug.soldier_Settlement
+    min_tier = check_tier(const.Mercenary_Inara, plug.tab_values)
+    if min_tier == 5:
+        mer1 = check_limit(const.Mercenary_Inara, "Swon")
+        mer2 = check_limit(const.Mercenary_Inara, "Hwon")
+        mer3 = check_limit(const.Mercenary_Inara, "settlements")
+        x1 = math.floor(plug.soldier_Total_Wins / mer1)
+        x2 = math.floor(plug.soldier_High_Wins / mer2)
+        x3 = math.floor(plug.soldier_Settlement / mer3)
+        d_h += min(x1, x2, x3)
+
+    # xeno-hunter
+    thargoid_kills = (plug.thargoid_kill - plug.thargoid_hunter)
+    plug.tab_values.clear()
+    plug.tab_values[0] = thargoid_kills
+    plug.tab_values[1] = plug.thargoid_cyclops
+    plug.tab_values[2] = plug.thargoid_basilisk
+    plug.tab_values[3] = plug.thargoid_medusa
+    plug.tab_values[4] = plug.thargoid_hydra
+    min_tier = check_tier(const.Xeno_Inara, plug.tab_values)
+    if min_tier == 5:
+        mer1 = check_limit(const.Xeno_Inara, "Killed")
+        mer2 = check_limit(const.Xeno_Inara, "Interceptors")
+        mer3 = check_limit(const.Xeno_Inara, "Basilisk")
+        mer4 = check_limit(const.Xeno_Inara, "Medusa")
+        mer5 = check_limit(const.Xeno_Inara, "Hydra")
+        x1 = math.floor(thargoid_kills / mer1)
+        x2 = math.floor(plug.thargoid_cyclops / mer2)
+        x3 = math.floor(plug.thargoid_basilisk / mer3)
+        x4 = math.floor(plug.thargoid_medusa / mer4)
+        x5 = math.floor(plug.thargoid_hydra / mer5)
+        d_h += min(x1, x2, x3, x4, x5)
+
+    # trader
+    plug.tab_values.clear()
+    plug.tab_values[0] = plug.trading_Resources
+    plug.tab_values[1] = plug.trading_Markets
+    min_tier = check_tier(const.Trader_Inara, plug.tab_values)
+    if min_tier == 5:
+        mer1 = check_limit(const.Trader_Inara, "Commodities")
+        mer2 = check_limit(const.Trader_Inara, "Market")
+        x1 = math.floor(plug.trading_Resources / mer1)
+        x2 = math.floor(plug.trading_Markets / mer2)
+        d_h += min(x1, x2)
+
+    # miner
+    plug.tab_values.clear()
+    plug.tab_values[0] = plug.miner_refined
+    min_tier = check_tier(const.Miner_Inara, plug.tab_values)
+    if min_tier == 5:
+        mer1 = check_limit(const.Miner_Inara, "Refined")
+        d_h += math.floor(plug.miner_refined / mer1)    
+
+    # samaritan
+    plug.tab_values.clear()
+    plug.tab_values[0] = plug.rescue_Traded
+    plug.tab_values[1] = plug.rescue_Reboot
+    plug.tab_values[2] = plug.rescue_FireOut
+    min_tier = check_tier(const.Samaritan_Inara, plug.tab_values)
+    if min_tier == 5:
+        mer1 = check_limit(const.Samaritan_Inara, "Rescued")
+        mer2 = check_limit(const.Samaritan_Inara, "Rebooted")
+        mer3 = check_limit(const.Samaritan_Inara, "Fires")
+        x1 = math.floor(plug.rescue_Traded / mer1)
+        x2 = math.floor(plug.rescue_Reboot / mer2)
+        x3 = math.floor(plug.rescue_FireOut / mer3)
+        d_h += min(x1, x2, x3)
+
+    # captain
+    plug.tab_values.clear()
+    plug.tab_values[0] = plug.passengers_Delivered
+    plug.tab_values[1] = plug.passengers_VIP
+    min_tier = check_tier(const.Captain_Inara, plug.tab_values)
+    if min_tier == 5:
+        mer1 = check_limit(const.Captain_Inara, "Passengers")
+        mer2 = check_limit(const.Captain_Inara, "VIPs")
+        x1 = math.floor(plug.passengers_Delivered / mer1)
+        x2 = math.floor(plug.passengers_VIP / mer2)
+        d_h += min(x1, x2)
+
+    plug.tab_values.clear()
+    return d_h
 
 
 def update_progress(entry):
@@ -767,38 +1037,47 @@ def update_promotion(entry):
 
 
 def update_hunter_bounty(entry):
-    
+    #  "event":"Bounty"  
+
     total_reward = entry["TotalReward"]
+    rewards = entry["Rewards"]
+    rewards_len = len(rewards)
     plug.hunting_bonds_tosell += total_reward
-    plug.hunting_kill += 1
+    plug.hunting_kill += rewards_len
+
+    for reward_h in rewards:
+        data_db.add_bounty('bounty', reward_h["Faction"], reward_h["Reward"])
 
     config_value_set()
     update_display("Hunter Kill {:,}".format(plug.hunting_kill), True)
 
 
 def update_combat_bond(entry):
+    #  "event":"FactionKillBond"
+
+    reward = entry["Reward"]
+    faction = entry["AwardingFaction"]
+
 
     if plug.On_Foot:
         plug.soldier_bonds += 1
         plug.kill_bonds_foot += 1
-        plug.soldier_last_sum += entry["Reward"]
+        plug.soldier_last_sum += reward
         overlay_text = "Combat On_Foot {:,}".format(plug.soldier_bonds)
+        type_bond = "on_foot"
     else:
         plug.combat_bonds += 1
         plug.kill_bonds += 1
-        plug.combat_last_sum += entry["Reward"]
+        plug.combat_last_sum += reward
         overlay_text = "Combat {:,}".format(plug.combat_bonds)
+        type_bond = "combat"
 
     if 'VictimFaction_Localised' in entry:
         targ = entry["VictimFaction_Localised"]
         if targ == 'Thargoids':
-            plug.thargoid_kill += 1
-            reward = entry["Reward"]
-            overlay_text += "\nThargoids Kill {:,}".format(plug.thargoid_kill)
             targ_name = 'none name'
-            timestamp = entry["timestamp"]   # "timestamp":"2024-05-28T08:00:00Z"
-            timestamp = timestamp.replace("T", " ")
-            timestamp = timestamp.replace("Z", "")
+            timestamp = timestamp_event(entry)
+            type_bond = "thargoid"
 
             if reward == CYCLOPS_TARG:
                 plug.thargoid_cyclops += 1
@@ -815,23 +1094,30 @@ def update_combat_bond(entry):
             if reward == SCOUT1_TARG or reward == SCOUT2_TARG or reward == SCOUT3_TARG:
                 plug.thargoid_scout += 1
                 targ_name = 'Scout'
-            if reward == HUNTER_TARG:
-                plug.thargoid_hunter += 1
-                targ_name = 'Hunter'
             if reward == ORTHRUS_TARG:
+                plug.thargoid_orthrus += 1
                 targ_name = 'Orthrus'
             if reward == BANSHEES_TARG:
                 targ_name = 'Banshees'
             if reward == REVENANT_TARG:
                 targ_name = 'Revenant'
+            if reward == HUNTER_TARG:
+                plug.thargoid_hunter += 1
+                targ_name = 'Hunter'
 
             data_db.thargoid_add(timestamp, targ_name, reward)
+            plug.thargoid_kill = data_db.get_thargoid_count()
+            overlay_text += "\nThargoids Kills {:,}".format(plug.thargoid_kill - plug.thargoid_hunter)
+
+    data_db.add_bounty(type_bond, faction, reward)        
 
     config_value_set()
     update_display(overlay_text, True)
 
 
 def update_redeem_voucher(entry):
+    # plug.redeemrvoucher_combat_on_foot = False
+    # plug.redeemrvoucher_combat = False
     type_redeemrvoucher = entry["Type"]
     if 'BrokerPercentage' in entry:  
         corect = 0.75
@@ -841,65 +1127,144 @@ def update_redeem_voucher(entry):
     overlay_text = ''
     if type_redeemrvoucher == 'bounty':
         sell_bonties = entry["Amount"]
+        factions = entry["Factions"]
+        sell_bonties = int(sell_bonties / corect)
         plug.hunting_bonds_profit += sell_bonties
-        overlay_text = "Hunting {:,} Cr".format(plug.hunting_bonds_profit)
-        sell_bonties = sell_bonties / corect
-        if plug.hunting_bonds_tosell > sell_bonties:
-            plug.hunting_bonds_tosell -= sell_bonties
-            plug.hunting_kill -= 1
-            plug.hunting_bonds += 1 
-        else:
-            plug.hunting_bonds_tosell = 0
-            plug.hunting_bonds += plug.hunting_kill
-            plug.hunting_kill = 0
+        overlay_text = "Hunting profit: {:,} Cr\n".format(plug.hunting_bonds_profit)
+        bounty_count = data_db.get_bounty_count()
+
+        for x in factions:
+            faction = x["Faction"]
+            amount = int(x["Amount"] / corect)
+            if faction != '':
+                data = data_db.find_faction(faction)
+            else:
+                data = data_db.find_amount(amount)
+            if data:
+                if data.type_bond == 'bounty':
+                    plug.hunting_kill -= data.count
+                    plug.hunting_bonds += data.count
+                    plug.hunting_bonds_tosell -= data.reward
+                    data_db.delete_bounty(data)
+        overlay_text += "      bounties: {:,}".format(plug.hunting_bonds)
+        if len(factions) == bounty_count:
+            bcc = data_db.get_bounty_count() 
+            if bcc > 0 and bcc < bounty_count: 
+                for bc in range(bcc):
+                    data = data_db.find_type_bounty('bounty')
+                    if data:
+                        plug.hunting_kill -= data.count
+                        plug.hunting_bonds += data.count
+                        data_db.delete_bounty(data)
 
     if type_redeemrvoucher == 'CombatBond':
-        # sprawdzic sprzedaz jezeli sa   kill_bonds_foot i kill_bonds jednoczesnie
-        if plug.kill_bonds_foot > 0:
-            sell_bonds = entry["Amount"]
-            if plug.kill_bonds > 0:
-                sell_bonds -= plug.combat_last_sum * corect
-            plug.soldier_profit += sell_bonds
-            overlay_text = "Soldier {:,} Cr".format(plug.soldier_profit)
-            sell_bonds = sell_bonds / corect
-            if sell_bonds < plug.soldier_last_sum:
-                plug.soldier_last_sum -= sell_bonds
-                plug.kill_bonds_foot -= 1
-            else:
-                plug.soldier_last_sum = 0
-                plug.kill_bonds_foot = 0
+        
+        sell_bonds = entry["Amount"]
+        sell_bonds = int(sell_bonds / corect)
+        faction = entry["Faction"]
+        if faction == 'PilotsFederation':
+            faction = '$faction_PilotsFederation;'
 
-        if plug.kill_bonds > 0:
-            sell_bonds = entry["Amount"]
-            if plug.kill_bonds_foot > 0:
-                sell_bonds = plug.combat_last_sum * corect
-            plug.combat_profit += sell_bonds
-            overlay_text = "Combat {:,} Cr".format(plug.combat_profit)
-            sell_bonds = sell_bonds / corect
-            if sell_bonds < plug.combat_last_sum:
-                plug.combat_last_sum -= sell_bonds
-                plug.kill_bonds -= 1
-            else:
+        
+        faction_count = data_db.get_faction_count(faction)
+
+        for fc in range(faction_count):
+
+            faction_bonds = data_db.find_faction(faction)  # sprawdzenie wiecej wpisow tej samej frakcji combat i onfoot
+
+            if faction_bonds.type_bond == 'on_foot':
+                # plug.redeemrvoucher_combat_on_foot = True
+                plug.soldier_profit += sell_bonds
+
+                add_bounty = math.floor((1000 - (faction_bonds.count * 5)) / 50) 
+                plug.soldier_bonds += add_bounty
+                plug.soldier_Total_Wins += 2
+
+                overlay_text = "Soldier {:,} Cr".format(plug.soldier_profit)
+                if sell_bonds < plug.soldier_last_sum:
+                    plug.soldier_last_sum -= sell_bonds
+                    plug.kill_bonds_foot -= faction_bonds.count
+                else:
+                    plug.soldier_last_sum = 0
+                    plug.kill_bonds_foot = 0
+
+            if faction_bonds.type_bond == 'combat':
+                # plug.redeemrvoucher_combat = True
+                plug.combat_profit += sell_bonds
+                overlay_text = "Combat {:,} Cr".format(plug.combat_profit)
+                if sell_bonds < plug.combat_last_sum:
+                    plug.combat_last_sum -= sell_bonds
+                    plug.kill_bonds -= faction_bonds.count
+                else:
+                    plug.combat_last_sum = 0
+                    plug.kill_bonds = 0
+                
+            if faction_bonds.type_bond == 'thargoid':
                 plug.combat_last_sum = 0
                 plug.kill_bonds = 0
+
+            data_db.delete_bounty(faction_bonds)
+
+    if type_redeemrvoucher == 'codex':
+        plug.codex_voucher = 0
+        plug.codex_count = 0
+        plug.codex_entry = 0
 
     config_value_set()
     update_display(overlay_text, True)
 
 
-def community(entry, count_sell):
-    if entry["MarketID"] == 3228804352:
-        if plug.wyd_il == 0:
-            plug.wyd_il = 35695
-        plug.wyd_il += count_sell
-        config_wyd_set()   
+def npc_crew(entry):
+    paid = entry["Amount"]
+    if plug.redeemrvoucher_combat_on_foot:
+        # plug.soldier_profit -= paid
+        plug.redeemrvoucher_combat_on_foot = False
 
+    if plug.redeemrvoucher_combat:
+        # plug.combat_profit -= paid
+        plug.redeemrvoucher_combat = False    
+
+
+
+
+
+def community(entry, count_sell: int = 0) -> None:
+    if plug.show_community.get():
+        if count_sell > 0:
+            if entry["MarketID"] == 3221497856 or plug.cur_station_name == "Tanner Settlement" :
+                plug.wyd_il += count_sell
+                return
+
+        if "CurrentGoals" in entry:
+            list_goals = entry["CurrentGoals"]
+            count_goals = len(list_goals)
+            plug.text_community = ''
+            for current_goals in list_goals:
+                player_contribution = current_goals["PlayerContribution"]
+                market_name = current_goals["MarketName"] 
+                plug.wyd_il = player_contribution
+                player_procentage = current_goals["PlayerPercentileBand"]
+                if player_contribution == 0:
+                    player_procentage = "0"
+                plug.text_community += "Community {:,} | TOP {}".format(plug.wyd_il, player_procentage)
+                if current_goals["PlayerInTopRank"]:
+                    plug.text_community += " CMDRs \n"
+                else:
+                    plug.text_community += "% \n"
+                if "TierReached" in current_goals:
+                    tier_curent = current_goals["TierReached"]
+                else:
+                    tier_curent = "Tier 0"
+                plug.text_community += "Contributions: {:,} / {}\n".format(current_goals["CurrentTotal"], tier_curent)
+            
+            config_wyd_set()
+            if monitor.game_running() and not plug.On_Foot:
+                plug.overlay.display('inaraprogress_community', plug.text_community, plug.overlay_info_x.get(),
+                                     plug.overlay_titans_y.get() + 20, plug.overlay_color.get(), 'large') 
+    
 
 def update_market(entry, is_buy=False):
-    # dodac system do tabli market powiazac z jump plug.curent_system dodac w parsing
-    timestamp = entry["timestamp"]   # "timestamp":"2024-05-28T08:00:00Z"
-    timestamp = timestamp.replace("T", " ")
-    timestamp = timestamp.replace("Z", "")
+    timestamp = timestamp_event(entry)
     market = entry["MarketID"]
     if is_buy:
         if data_db.get_docked_fleet(market):   
@@ -913,12 +1278,13 @@ def update_market(entry, is_buy=False):
             if pr_cr > 0:
                 data_db.set_trade(timestamp, market, pr_cr)
                 plug.trade_profit += pr_cr 
-                overlay_text = "Trade Profit {:,}\n".format(plug.trade_profit)
+                overlay_text = "Trade Profit {:,}\n".format(data_db.get_trade_profit())
             plug.trading_Markets += data_db.set_market(plug.curent_system, market, 'sell')
             plug.trading_Resources += count_sell
             #  selekja sprzedaz typ mining itp..
 
             overlay_text += "Sumary Resources {:,}".format(plug.trading_Resources)
+            community(entry, count_sell)
             config_trade_set()
             update_display(overlay_text, True)
 
@@ -937,6 +1303,12 @@ def update_bio_data(entry):
     clear_sell_bio_table = False
     plug.exobiologist_Organic += count_bio
     # jezeli sell_bio_count < od count_bio blad wpisow mozliwe wylaczony plugin
+    if count_bio > sell_bio_count:
+        text_error = 'ERROR table DB len: {}'.format(sell_bio_count)
+    else:
+        text_error = ''
+    timestamp = timestamp_event(entry)    
+    data_db.set_sell_date_died(timestamp, count_bio, text_error, '', '')
 
     value_bio = 0
     bonus_bio = 0
@@ -985,7 +1357,7 @@ def update_bio_saa(entry):
                 if localised == "Biological":
                     if not data_db.check_planet_biosaa(entry["BodyID"], entry["BodyName"], 
                                                        entry["SystemAddress"], sg["Count"]):   
-                        plug.exobiologist_Planets += 1
+                        plug.exobiologist_Planets = data_db.get_planet_biosaa_count()
     config_value_set()
     update_display()            
 
@@ -1006,9 +1378,7 @@ def update_bio_fss(entry):
 def update_bio_sample(entry):
     if "ScanType" in entry:
         if entry["ScanType"] == "Analyse":
-            timestamp = entry["timestamp"]   # "timestamp":"2024-05-28T08:00:00Z"
-            timestamp = timestamp.replace("T", " ")
-            timestamp = timestamp.replace("Z", "")
+            timestamp = timestamp_event(entry)
             system_id = entry["SystemAddress"]
             planet_id = entry["Body"]
             bio_codex = entry["Species"]
@@ -1022,38 +1392,55 @@ def update_bio_sample(entry):
                             planet_id, data_db.name_planet(system_id, planet_id),
                             bio_name, bio_variant, bio_codex)
             data_db.set_sell_bio(timestamp, system_id, planet_id, bio_codex, bio_name, bio_variant, bio_cost)
-
+            data_db.set_sell_date_died(timestamp, 0, data_db.name_system(system_id), 
+                                       data_db.name_planet(system_id, planet_id), bio_name)
             plug.bio_sell += bio_cost
             plug.bio_find += 1
             config_value_set()
             update_display()
 
 
-def update_jump(entry):
-    overlay_text = ""
-    plug.curent_system = entry["SystemAddress"]
-    plug.exploration_Jumps += 1
-    jump_d = entry["JumpDist"]
-    jump_c = math.floor(jump_d)
-    jump_f = jump_d - jump_c
-    plug.exploration_Distance += jump_c
-    plug.exploration_Distance_f += jump_f    
-    if plug.exploration_Distance_f > 1:
-        jump_d = plug.exploration_Distance_f
+def update_codex_voucher(entry):
+    if 'VoucherAmount' in entry:
+        plug.codex_voucher += entry["VoucherAmount"]
+        plug.codex_count += 1
+        config_value_set()
+        update_display()
+    if 'IsNewEntry' in entry:
+        codex_entry = entry["IsNewEntry"]
+        if codex_entry == 'true':
+            plug.codex_entry += 1
+            config_value_set()
+            update_display()
+
+
+def update_jump(entry) -> None:
+    system_jump = entry["SystemAddress"]
+    if plug.curent_system != system_jump: 
+        plug.curent_system = system_jump
+        overlay_text = ""
+        plug.exploration_Jumps += 1
+        jump_d = entry["JumpDist"]
         jump_c = math.floor(jump_d)
-        plug.exploration_Distance += jump_c
         jump_f = jump_d - jump_c
-        plug.exploration_Distance_f = jump_f
-    overlay_text += "Jumps {:,} ".format(plug.exploration_Jumps)
-    overlay_text += "Distance {:,}".format(plug.exploration_Distance)    
+        plug.exploration_Distance += jump_c
+        plug.exploration_Distance_f += jump_f    
+        if plug.exploration_Distance_f > 1:
+            jump_d = plug.exploration_Distance_f
+            jump_c = math.floor(jump_d)
+            plug.exploration_Distance += jump_c
+            jump_f = jump_d - jump_c
+            plug.exploration_Distance_f = jump_f
+        overlay_text += "Jumps {:,} ".format(plug.exploration_Jumps)
+        overlay_text += "Distance {:,}".format(plug.exploration_Distance)    
 
-    # system  wizyted baza dany zapis  i sprawdzenie
-    if not data_db.check_system(plug.curent_system, entry["StarSystem"], entry["StarPos"], True):
-        plug.exploration_Visited += 1
-        overlay_text += "\n New System Visited {:,}".format(plug.exploration_Visited)
+        # system  wizyted baza dany zapis  i sprawdzenie
+        if not data_db.check_system(plug.curent_system, entry["StarSystem"], entry["StarPos"], True):
+            plug.exploration_Visited += 1
+            overlay_text += "\n New System Visited {:,}".format(plug.exploration_Visited)
 
-    config_value_set()
-    update_display(overlay_text, True)
+        config_value_set()
+        update_display(overlay_text, True)
 
 
 def update_discovery_scan(entry):
@@ -1064,11 +1451,13 @@ def update_discovery_scan(entry):
 
 def update_died(entry):
     if plug.bio_find > 0:     # data_db.get_sell_bio_count()
-        timestamp = entry["timestamp"]   # "timestamp":"2024-05-28T08:00:00Z"
-        timestamp = timestamp.replace("T", " ")
-        timestamp = timestamp.replace("Z", "")
-        time_event = datetime.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
-
+        timestamp = timestamp_event(entry)
+        time_event = dti.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+        if 'KillerName' in entry:
+            tx = entry["KillerName"]
+        else:
+            tx = 'died'
+        data_db.set_sell_date_died(timestamp, 0, tx, '', '')
         data_db.export_bio_lost(time_event)
         data_db.finish_sell_bio()
         plug.bio_find = 0
@@ -1085,6 +1474,7 @@ def update_mining_refined():
 
 def update_docked(entry):
     data_db.check_system(entry["SystemAddress"], entry["StarSystem"], plug.pos_null, False)
+    plug.cur_station_name = entry["StationName"]
     if entry["StationType"] == "FleetCarrier":
         data_db.set_docked_fleet(entry["MarketID"])
 
@@ -1099,53 +1489,37 @@ def update_mission_accepted(entry):
 
 
 def update_mission_completed(entry):
-    mission_id = entry["MissionID"]
-    if data_db.find_id_mission(mission_id):
-        passenger_count = data_db.get_passenger_count(mission_id)
-        if data_db.get_vip(mission_id):
-            plug.passengers_VIP += passenger_count
-            overlay_text = "Passengers VIP {:,}".format(plug.passengers_VIP)  
-        else:
+    
+    if "Commodity" in entry:
+        cargo_type = entry["Commodity"]
+        if cargo_type == '$OccupiedCryoPod_Name;':
+            # pr_cr = entry["Reward"]
+            plug.rescue_pods += entry["Count"]
+            # plug.trade_profit += pr_cr
+            config_value_set()
+            update_display("Rescue {:,}".format(plug.rescue_Traded), True)  
+    else:
+        mission_id = entry["MissionID"]
+        if data_db.find_id_mission(mission_id):
+            passenger_count = data_db.get_passenger_count(mission_id)
+            overlay_text = ""
+            if data_db.get_vip(mission_id):
+                plug.passengers_VIP += passenger_count
+                overlay_text += "Passengers VIP {:,}\n".format(plug.passengers_VIP)  
+
             plug.passengers_Delivered += passenger_count
-            overlay_text = "Passengers Delivered {:,}".format(plug.passengers_Delivered)  
-        data_db.finish_mission(mission_id) 
+            overlay_text += "Passengers Delivered {:,}".format(plug.passengers_Delivered)
+            if entry["Name"] == 'Mission_TW_RefugeeBulk_name': 
+                plug.rescue_passenger += passenger_count
+                overlay_text += "\nRescue {:,}".format(plug.rescue_passenger + plug.rescue_pods + plug.rescue_Traded)
+            data_db.finish_mission(mission_id) 
         
         config_value_set()
         update_display(overlay_text, True)    
 
 
-"""
-"event":"SearchAndRescue", "MarketID":3228841728, 
-                           "Name":"occupiedcryopod", 
-                           "Name_Localised":"Occupied Escape Pod", 
-                           "Count":2, 
-                           "Reward":61326 }
-"event":"SearchAndRescue", "MarketID":3224200192, 
-                           "Name":"damagedescapepod", 
-                           "Name_Localised":"Damaged Escape Pod", 
-                           "Count":1, 
-                           "Reward":16737 }
-"event":"SearchAndRescue", "MarketID":3222042368, 
-                           "Name":"thargoidpod", 
-                           "Name_Localised":"Thargoid Bio-storage Capsule", 
-                           "Count":5, 
-                           "Reward":733235 }
-"event":"SearchAndRescue", "MarketID":3221963776, 
-                           "Name":"usscargoblackbox", "Name_Localised":"Black Box", "Count":1, "Reward":30974 }
-"event":"SearchAndRescue", "MarketID":3221963776, 
-                           "Name":"wreckagecomponents", 
-                           "Name_Localised":"Wreckage Components", 
-                           "Count":3, 
-                           "Reward":26742 }
-
-
-"""
-
-
 def update_rescue(entry):
-    timestamp = entry["timestamp"]   # "timestamp":"2024-05-28T08:00:00Z"
-    timestamp = timestamp.replace("T", " ")
-    timestamp = timestamp.replace("Z", "")
+    timestamp = timestamp_event(entry)
     pr_cr = entry["Reward"]
     market = entry["MarketID"]
 
@@ -1225,6 +1599,11 @@ def update_statistics_tab(entry):
 
     #  LOG.log(f"update_statistics_tab {self.bio_profit}", "INFO"
 
+def timestamp_event(entry) -> str:
+    timestamp = entry["timestamp"]   # "timestamp":"2024-05-28T08:00:00Z"
+    timestamp = timestamp.replace("T", " ")
+    timestamp = timestamp.replace("Z", "")
+    return timestamp
 
 def parse_config() -> None:
     plug.show_rank = tk.BooleanVar(value=config.get_bool(key='InaraProgress_show_rank', default=True))
@@ -1245,15 +1624,21 @@ def parse_config() -> None:
 
     plug.show_thargoid_progress = tk.BooleanVar(value=config.get_bool(key='InaraProgress_show_thargoid', default=True))
     plug.show_titan = tk.BooleanVar(value=config.get_bool(key='InaraProgress_show_titan', default=True))
+    plug.show_community = tk.BooleanVar(value=config.get_bool(key='InaraProgress_show_community', default=False))
 
     plug.use_overlay = tk.BooleanVar(value=config.get_bool(key='InaraProgress_overlay', default=False))
     plug.overlay_color = tk.StringVar(value=config.get_str(key='InaraProgress_overlay_color', default='#ff0000'))
+    plug.overlay_color_info = tk.StringVar(value=config.get_str(key='InaraProgress_overlay_color_info', default='#ff0000'))
+    plug.overlay_color_titans = tk.StringVar(value=config.get_str(key='InaraProgress_overlay_color_titans', default='#ff0000'))
     plug.overlay_anchor_x = tk.IntVar(value=config.get_int(key='InaraProgress_overlay_anchor_x', default=1040))
     plug.overlay_anchor_y = tk.IntVar(value=config.get_int(key='InaraProgress_overlay_anchor_y', default=0))
     plug.overlay_info_x = tk.IntVar(value=config.get_int(key='InaraProgress_overlay_info_x', default=500))
-    plug.overlay_info_y = tk.IntVar(value=config.get_int(key='InaraProgress_overlay_info_y', default=160))    
+    plug.overlay_info_y = tk.IntVar(value=config.get_int(key='InaraProgress_overlay_info_y', default=160))
+    plug.overlay_titans_x = tk.IntVar(value=config.get_int(key='InaraProgress_overlay_titans_x', default=500))
+    plug.overlay_titans_y = tk.IntVar(value=config.get_int(key='InaraProgress_overlay_titans_y', default=210))
+    plug.titan_curent = tk.StringVar(value=config.get_str(key='InaraProgress_titan_curent', default='Taranis'))    
 
-    plug.clear_data_db = tk.BooleanVar(value=config.get_bool(key='InaraProgress_clear_data_db', default=False))
+    plug.selected_parsing = tk.StringVar(value=config.get_str(key='InaraProgress_selected_parsing', default='0'))
 
 
 def parse_config_value() -> None:
@@ -1298,6 +1683,8 @@ def parse_config_value() -> None:
     plug.rescue_Traded = data_db.get_setting('InaraProgress_Rescue_Traded')
     plug.rescue_FireOut = data_db.get_setting('InaraProgress_Rescue_FireOut')
     plug.rescue_Reboot = data_db.get_setting('InaraProgress_Rescue_Reboot')
+    plug.rescue_passenger = data_db.get_setting('InaraProgress_Rescue_Passenger')
+    plug.rescue_pods = data_db.get_setting('InaraProgress_Rescue_Pods') 
     plug.exploration_Distance = data_db.get_setting('InaraProgress_exploration_Distance')
 
     plug.exploration_Distance_f = data_db.get_setting('InaraProgress_exploration_Distance_f')
@@ -1310,23 +1697,32 @@ def parse_config_value() -> None:
     plug.trading_Markets = data_db.get_setting('InaraProgress_trading_Markets')
     plug.miner_refined = data_db.get_setting('InaraProgress_miner_refined')
 
-    plug.thargoid_kill = data_db.get_setting('InaraProgress_thargoid_kill')
+    # plug.thargoid_kill = data_db.get_setting('InaraProgress_thargoid_kill')
+    plug.thargoid_kill = data_db.get_thargoid_count()
     plug.thargoid_cyclops = data_db.get_setting('InaraProgress_thargoid_cyclops')
     plug.thargoid_basilisk = data_db.get_setting('InaraProgress_thargoid_basilisk')
     plug.thargoid_medusa = data_db.get_setting('InaraProgress_thargoid_medusa')
     plug.thargoid_hydra = data_db.get_setting('InaraProgress_thargoid_hydra')
     plug.thargoid_scout = data_db.get_setting('InaraProgress_thargoid_scout')
     plug.thargoid_hunter = data_db.get_setting('InaraProgress_thargoid_hunter')
+    plug.thargoid_orthrus = data_db.get_setting('InaraProgress_thargoid_orthrus')
 
     plug.trade_profit = data_db.get_setting('InaraProgress_trade_profit')
     plug.explore_profit = data_db.get_setting('InaraProgress_explore_profit')
     plug.bio_profit = data_db.get_setting('InaraProgress_bio_profit')
     plug.bio_sell = data_db.get_setting('InaraProgress_bio_bonus')
-    plug.bio_find = data_db.get_setting('InaraProgress_bio_find') 
+    plug.bio_find = data_db.get_setting('InaraProgress_bio_find')
+    plug.codex_voucher = data_db.get_setting('InaraProgress_codex_voucher')
+    plug.codex_count = data_db.get_setting('InaraProgress_codex_count')
+    plug.codex_entry = data_db.get_setting('InaraProgress_codex_entry')
     plug.miner_profit = data_db.get_setting('InaraProgress_miner_profit')
 
     plug.wyd_il = data_db.get_setting('InaraProgress_wyd_il')
     plug.curent_system = data_db.get_setting("InaraProgress_curent_system")
+    
+    t_ev = data_db.get_setting("InaraProgress_timestamp_last")
+    # czas first run = 0 blad
+    plug.timestamp_last = dti.datetime.strptime(t_ev, '%Y-%m-%d %H:%M:%S')
 
 
 def config_rank_set() -> None:
@@ -1369,9 +1765,13 @@ def config_value_set() -> None:
     data_db.set_setting("InaraProgress_exobiologist_Organic", plug.exobiologist_Organic)
     data_db.set_setting("InaraProgress_exobiologist_Planets", plug.exobiologist_Planets)
     data_db.set_setting("InaraProgress_exobiologist_Unique", plug.exobiologist_Unique)
+
     data_db.set_setting('InaraProgress_Rescue_Traded', plug.rescue_Traded)
     data_db.set_setting('InaraProgress_Rescue_FireOut', plug.rescue_FireOut)
     data_db.set_setting('InaraProgress_Rescue_Reboot', plug.rescue_Reboot)
+    data_db.set_setting('InaraProgress_Rescue_Passenger', plug.rescue_passenger)
+    data_db.set_setting('InaraProgress_Rescue_Pods', plug.rescue_pods) 
+
     data_db.set_setting('InaraProgress_exploration_Distance', plug.exploration_Distance)
     data_db.set_setting_f('InaraProgress_exploration_Distance_f', plug.exploration_Distance_f)
     data_db.set_setting('InaraProgress_exploration_Jumps', plug.exploration_Jumps)
@@ -1390,10 +1790,15 @@ def config_value_set() -> None:
     data_db.set_setting('InaraProgress_thargoid_hydra', plug.thargoid_hydra)
     data_db.set_setting('InaraProgress_thargoid_scout', plug.thargoid_scout)
     data_db.set_setting('InaraProgress_thargoid_hunter', plug.thargoid_hunter)
+    data_db.set_setting('InaraProgress_thargoid_orthrus', plug.thargoid_orthrus)
 
     data_db.set_setting("InaraProgress_bio_bonus", plug.bio_sell)
     data_db.set_setting("InaraProgress_bio_find", plug.bio_find)
+    data_db.set_setting('InaraProgress_codex_voucher', plug.codex_voucher)
+    data_db.set_setting('InaraProgress_codex_count', plug.codex_count)
+    data_db.set_setting('InaraProgress_codex_entry', plug.codex_entry)
     data_db.set_setting("InaraProgress_curent_system", plug.curent_system)
+    data_db.set_setting("InaraProgress_timestamp_last", dti.datetime.strftime(plug.timestamp_last, '%Y-%m-%d %H:%M:%S'))
 
 
 def config_trade_set() -> None:
@@ -1414,7 +1819,7 @@ def journals_parse():
     config_value_set()
     plug.button.config(text='Parsing Done')
 
-    parse_journals(plug.clear_data_db.get())
+    parse_journals(int(plug.selected_parsing.get()))
     parse_config_value()
     update_display()
     LOG.log('Parsing Done', 'INFO')
@@ -1423,12 +1828,27 @@ def journals_parse():
 def clear_bio_counter():
     plug.bio_find = 0
     plug.bio_sell = 0
+    data_db.finish_sell_bio()
+    plug.combat_last_sum = 0
+    plug.kill_bonds = 0
+    plug.soldier_last_sum = 0
+    plug.kill_bonds_foot = 0
+    plug.hunting_kill = 0
+    plug.hunting_bonds_tosell = 0
+    data_db.clear_bounty()
+
+
+def show_selected_parsing():
+    showinfo(
+        title='Result',
+        message=plug.selected_parsing.get()
+    )
 
 
 def plugin_start3(plugin_dir: str) -> str:
 
     data_db.init()
-    plug.sql_session = Session(data_db.get_engine())
+    #plug.sql_session = Session(data_db.get_engine())
 
     return plug.NAME
 
@@ -1444,17 +1864,19 @@ def plugin_stop() -> None:
 
 
 def plugin_prefs(parent: Nb.Frame, cmdr: str, is_beta: bool) -> Nb.Frame:
-    color_button = None
+    color_button1 = None
+    color_button2 = None
+    color_button3 = None
 
-    def color_chooser() -> None:
+    def color_chooser(overlay_color: tk.StringVar, color_b: tk.Button) -> None:
         (_, color) = tkColorChooser.askcolor(
-            plug.overlay_color.get(), title='Overlay Color', parent=plug.parent
+            overlay_color.get(), title='Overlay Color', parent=plug.parent
         )
 
         if color:
-            plug.overlay_color.set(color)
-            if color_button is not None:
-                color_button['foreground'] = color
+            overlay_color.set(color)
+            if color_b is not None:
+                color_b['foreground'] = color
 
     x_padding = 10
     x_button_padding = 12    
@@ -1524,28 +1946,36 @@ def plugin_prefs(parent: Nb.Frame, cmdr: str, is_beta: bool) -> Nb.Frame:
     # Overlay settings
     ttk.Separator(frame).grid(row=15, columnspan=3, pady=y_padding * 2, sticky=tk.EW)
 
-    Nb.Label(frame,
+    check_frame = Nb.Frame(frame)
+    check_frame.grid(row=20, column=0, sticky=tk.NSEW)
+    Nb.Label(check_frame,
              text='EDMC Overlay Integration',
              justify=tk.LEFT) \
-        .grid(row=20, column=0, padx=x_padding, sticky=tk.NW)
+        .grid(row=0, column=0, padx=x_padding, sticky=tk.NW)
+
     Nb.Checkbutton(
-        frame,
-        text='Enable display Titans',
-        variable=plug.show_titan
-    ).grid(row=20, column=1, padx=x_button_padding, pady=0, sticky=tk.W)
-    Nb.Checkbutton(
-        frame,
+        check_frame,
         text='Enable overlay',
         variable=plug.use_overlay
-    ).grid(row=21, column=0, padx=x_button_padding, pady=0, sticky=tk.W)
-    color_button = tk.Button(frame, text='Text Color', foreground=plug.overlay_color.get(),
-                             background='grey4', command=lambda: color_chooser()
-                             )
-    color_button.grid(row=21, column=1, padx=x_button_padding, pady=y_padding, sticky=tk.W)
+    ).grid(row=1, column=0, padx=x_button_padding, pady=0, sticky=tk.W)
+
+    Nb.Checkbutton(
+        check_frame,
+        text='Enable display Titans',
+        variable=plug.show_titan
+    ).grid(row=3, column=0, padx=x_button_padding, pady=0, sticky=tk.W)
+
+    Nb.Checkbutton(
+        check_frame,
+        text='Enable display Community',
+        variable=plug.show_community
+    ).grid(row=2, column=0, padx=x_button_padding, pady=0, sticky=tk.W)
+
+    # Anchor Frame start
 
     anchor_frame = Nb.Frame(frame)
-    anchor_frame.grid(row=21, column=2, sticky=tk.NSEW)
-    anchor_frame.columnconfigure(4, weight=1)
+    anchor_frame.grid(row=20, column=1, sticky=tk.NSEW)
+    anchor_frame.columnconfigure(5, weight=1)
 
     Nb.Label(anchor_frame, text='Display Positon:') \
         .grid(row=0, column=0, sticky=tk.W)
@@ -1577,20 +2007,77 @@ def plugin_prefs(parent: Nb.Frame, cmdr: str, is_beta: bool) -> Nb.Frame:
         width=8, validate='all', validatecommand=(vcmd, '%P')
     ).grid(row=1, column=4, sticky=tk.W)
 
+    Nb.Label(anchor_frame, text='Titans Positon:') \
+        .grid(row=2, column=0, sticky=tk.W)
+    Nb.Label(anchor_frame, text='X') \
+        .grid(row=2, column=1, sticky=tk.W)
+    Nb.EntryMenu(
+        anchor_frame, text=plug.overlay_titans_x.get(), textvariable=plug.overlay_titans_x,
+        width=8, validate='all', validatecommand=(vcmd, '%P')
+    ).grid(row=2, column=2, sticky=tk.W)
+    Nb.Label(anchor_frame, text='Y') \
+        .grid(row=2, column=3, sticky=tk.W)
+    Nb.EntryMenu(
+        anchor_frame, text=plug.overlay_titans_y.get(), textvariable=plug.overlay_titans_y,
+        width=8, validate='all', validatecommand=(vcmd, '%P')
+    ).grid(row=2, column=4, sticky=tk.W)
+
+
+    color_button1 = tk.Button(anchor_frame, text='Text Color', foreground=plug.overlay_color.get(),
+                             background='grey4', 
+                             command=lambda: color_chooser(plug.overlay_color, color_button1)
+                             )
+    color_button1.grid(row=0, column=5, padx=x_button_padding, pady=y_padding, sticky=tk.NW)
+    color_button2 = tk.Button(anchor_frame, text='Text Color', foreground=plug.overlay_color_info.get(),
+                             background='grey4', 
+                             command=lambda: color_chooser(plug.overlay_color_info, color_button2)
+                             )
+    color_button2.grid(row=1, column=5, padx=x_button_padding, pady=y_padding, sticky=tk.NW)
+    color_button3 = tk.Button(anchor_frame, text='Text Color', foreground=plug.overlay_color_titans.get(),
+                             background='grey4', 
+                             command=lambda: color_chooser(plug.overlay_color_titans, color_button3)
+                             )
+    color_button3.grid(row=2, column=5, padx=x_button_padding, pady=y_padding, sticky=tk.NW)
+
+
+    titans_options = ['Cocijo', 'Hadad', 'Indra', 'Leigong', 'Oya', 'Raijin', 'Taranis', 'Thor']
+    Nb.OptionMenu(
+        anchor_frame,
+        plug.titan_curent,
+        plug.titan_curent.get(),
+        *titans_options
+    ).grid(row=2, padx=x_padding, pady=y_padding, column=6, sticky=tk.W)
+
+
+    # Anchor Frame end
+
     ttk.Separator(frame, orient=tk.HORIZONTAL).grid(row=55, columnspan=3, pady=y_padding * 2, sticky=tk.EW)
 
     plug.button = Nb.Button(frame, text='Journal Parsing', command=journals_parse)
     plug.button.grid(row=60, column=0, padx=x_padding, sticky=tk.SW)
 
-    plug.clear_data_db.set(False)
 
-    Nb.Checkbutton(
-        frame,
-        text='All Log Parsing',
-        variable=plug.clear_data_db
-    ).grid(row=60, column=1, padx=x_button_padding, pady=0, sticky=tk.W)
+    sizes = (('Normal Parsing', 0),
+             ('All Log Parsing', 1),
+             ('Rescan Thargoid', 2),
+             ('Rescan Trade Profit', 3),
+             ('Rescan Rescue', 4)
+             )
 
-    button = Nb.Button(frame, text='Clear Bio Counter', command=clear_bio_counter)
+    # radio buttons
+    l = 0
+    for size in sizes:
+        rb = Nb.Radiobutton(
+            frame,
+            text=size[0],
+            value=int(size[1]),
+            variable=plug.selected_parsing
+            )
+        rb.grid(row=60+l, column=1, padx=x_button_padding, pady=0, sticky=tk.W)
+        l += 1
+    plug.selected_parsing.set(0)    
+
+    button = Nb.Button(frame, text='Clear Counter', command=clear_bio_counter)
     button.grid(row=65, column=0, padx=x_padding, sticky=tk.SW)
 
     return frame
@@ -1615,20 +2102,27 @@ def prefs_changed(cmdr: str, is_beta: bool) -> None:
 
     config.set('InaraProgress_show_thargoid', plug.show_thargoid_progress.get())
     config.set('InaraProgress_show_titan', plug.show_titan.get())
+    config.set('InaraProgress_show_community', plug.show_community.get())
 
     config.set('InaraProgress_overlay', plug.use_overlay.get())
     config.set('InaraProgress_overlay_color', plug.overlay_color.get())
+    config.set('InaraProgress_overlay_color_info', plug.overlay_color_info.get())
+    config.set('InaraProgress_overlay_color_titans', plug.overlay_color_titans.get())
     config.set('InaraProgress_overlay_anchor_x', plug.overlay_anchor_x.get())
     config.set('InaraProgress_overlay_anchor_y', plug.overlay_anchor_y.get())
     config.set('InaraProgress_overlay_info_x', plug.overlay_info_x.get())
-    config.set('InaraProgress_overlay_info_y', plug.overlay_info_y.get())    
-
-    # config.set('InaraProgress_clear_data_db', plug.clear_data_db.get())
+    config.set('InaraProgress_overlay_info_y', plug.overlay_info_y.get())
+    config.set('InaraProgress_overlay_titans_x', plug.overlay_titans_x.get())
+    config.set('InaraProgress_overlay_titans_y', plug.overlay_titans_y.get())
+    config.set('InaraProgress_titan_curent', plug.titan_curent.get())
 
     setup_frame_new()
     update_stats()
     update_display('Test Display Positon Info', True)
     titan_state()
+    if not plug.show_community.get():
+        plug.overlay.clear('inaraprogress_community')    
+
 
 
 def version_check() -> str:
@@ -1715,6 +2209,10 @@ def dashboard_entry(cmdr: str, is_beta: bool, entry: dict[str, any]) -> str:
 def journal_entry(cmdr: str, is_beta: bool, system: str,
                   station: str, entry: MutableMapping[str, Any], state: Mapping[str, Any]):
     titan_state()
+    timestamp = timestamp_event(entry)
+    time_event = dti.datetime.strptime(timestamp, '%Y-%m-%d %H:%M:%S')
+    
+
     match entry['event']:
         case 'Statistics':
             # LOG.log(f"Event Statistics", "INFO")
@@ -1725,49 +2223,81 @@ def journal_entry(cmdr: str, is_beta: bool, system: str,
             update_ranks(entry)
         case 'Promotion':
             update_promotion(entry)
-        case 'Bounty':
-            update_hunter_bounty(entry)
-        case 'RedeemVoucher':
-            update_redeem_voucher(entry)
-        case 'FactionKillBond':
-            update_combat_bond(entry)
-        case 'MarketBuy':
-            update_market(entry, True)
-        case 'MarketSell':
-            update_market(entry, False)
-        case 'SellExplorationData':
-            update_exp_data(entry)
-        case 'MultiSellExplorationData':
-            update_exp_data(entry)
-        case 'SellOrganicData':
-            # LOG.log(f"Event SellOrganicData", "INFO")
-            update_bio_data(entry)
+        case 'Music':
+            type_music = entry["MusicTrack"]
+            if (type_music == 'SystemMap' or type_music == 'GalaxyMap'or type_music == 'Squadrons' or plug.On_Foot 
+                or type_music == 'Codex' or type_music == 'MainMenu' or type_music == 'FleetCarrier_Managment'
+                or type_music == 'GalacticPowers' or type_music == 'SystemAndSurfaceScanner' 
+                or type_music == 'OnFoot'):
+                plug.open_map = False  
+            else:
+                plug.open_map = True
 
-        case 'FSDJump':
-            update_jump(entry)
-        case 'FSSDiscoveryScan':
-            update_discovery_scan(entry)
-        case 'FSSBodySignals':
-            update_bio_fss(entry)
-        case 'SAASignalsFound':
-            update_bio_saa(entry)
+            if monitor.game_running() and plug.open_map and plug.show_community.get():
+                plug.overlay.display('inaraprogress_community', plug.text_community, plug.overlay_info_x.get(),
+                                     plug.overlay_titans_y.get() + 20, plug.overlay_color.get(), 'large') 
+            else:
+                plug.overlay.clear('inaraprogress_community')    
 
-        case 'ScanOrganic':
-            update_bio_sample(entry)
-        case 'MiningRefined':
-            update_mining_refined()
-        case 'SearchAndRescue':
-            update_rescue(entry)
-        case 'MissionAccepted':
-            update_mission_accepted(entry)
-        case 'MissionCompleted':
-            update_mission_completed(entry)
-        case 'Docked':
-            update_docked(entry)
-        case 'Died':
-            update_died(entry)
-        case 'SupercruiseEntry':
-            update_supercruiseentry(entry)
+    if plug.timestamp_last <= time_event:
+        match entry['event']:  
+            case 'Bounty':
+                update_hunter_bounty(entry)
+            case 'RedeemVoucher':
+                update_redeem_voucher(entry)
+            case 'FactionKillBond':
+                update_combat_bond(entry)
+            case 'MarketBuy':
+                update_market(entry, True)
+            case 'MarketSell':
+                update_market(entry, False)
+            case 'SellExplorationData':
+                update_exp_data(entry)
+            case 'MultiSellExplorationData':
+                update_exp_data(entry)
+            case 'SellOrganicData':
+                # LOG.log(f"Event SellOrganicData", "INFO")
+                update_bio_data(entry)
+
+            case 'FSDJump':
+                update_jump(entry)
+            case 'FSSDiscoveryScan':
+                update_discovery_scan(entry)
+            case 'FSSBodySignals':
+                update_bio_fss(entry)
+            case 'SAASignalsFound':
+                update_bio_saa(entry)
+
+            case 'ScanOrganic':
+                update_bio_sample(entry)
+            case 'CodexEntry':
+                update_codex_voucher(entry)
+
+            case 'MiningRefined':
+                update_mining_refined()
+            case 'SearchAndRescue':
+                update_rescue(entry)
+            case 'MissionAccepted':
+                update_mission_accepted(entry)
+            case 'CargoDepot':
+                pass
+                # update_mission_cargo(entry)
+            case 'MissionCompleted':
+                update_mission_completed(entry)
+            case 'Docked':
+                update_docked(entry)
+            case 'Died':
+                update_died(entry)
+            case 'SupercruiseEntry':
+                update_supercruiseentry(entry)
+            case 'CommunityGoal':
+                community(entry)
+            case 'NpcCrewPaidWage':
+                npc_crew(entry)
+
+
+        plug.timestamp_last = time_event
+        data_db.set_setting("InaraProgress_timestamp_last", dti.datetime.strftime(plug.timestamp_last, '%Y-%m-%d %H:%M:%S'))
 
 
 def titan_state():
@@ -1779,16 +2309,17 @@ def titan_state():
 
             for titan in titans:
 
-                if titan['name'] == "Indra":
+                if titan['name'] == plug.titan_curent.get():
                     overlay_titan = titan['name']
                     overlay_titan += '  Hearts: ' + str(titan['heartsRemaining'])
                     overlay_titan += '  Progress: {:.4f}'.format(titan['heartProgress']*100)
-                    plug.overlay.display('inaraprogress_titan', overlay_titan, plug.overlay_info_x.get(), 
-                                         plug.overlay_info_y.get() + 50, plug.overlay_color.get(), 'large')
+                    if monitor.game_running():
+                        plug.overlay.display('inaraprogress_titan', overlay_titan, plug.overlay_titans_x.get(), 
+                                             plug.overlay_titans_y.get(), plug.overlay_color_titans.get(), 'large')
 
         except (requests.RequestException, requests.JSONDecodeError):
             LOG.log('Failed to load Titans', "INFO")
     else:
         plug.overlay.clear('inaraprogress_titan')        
-   
+
 

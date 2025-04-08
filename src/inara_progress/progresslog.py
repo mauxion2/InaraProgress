@@ -1,12 +1,15 @@
 
 import logging
 import sys
-# import os
+from typing import cast
 from config import appname
 from inara_progress import const
 
 if sys.version_info.major == 3:
     sys.stdout.reconfigure(encoding="utf-8")
+
+
+
 
 
 class ProgressLog(object):
@@ -33,3 +36,9 @@ class ProgressLog(object):
     def log(self, msg, level):
         level = self.LEVEL_MAPPING.get(level, logging.NOTSET)
         self.logger.log(level, msg)
+
+plugin_logger = ProgressLog()
+
+def get_progress_log() -> 'LoggerMixin':
+
+    return cast('LoggerMixin', plugin_logger)

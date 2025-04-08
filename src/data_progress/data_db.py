@@ -15,10 +15,11 @@ from sqlalchemy.orm import mapped_column
 # from sqlalchemy.orm import relationship
 
 from data_progress.const import database_version, plugin_name
-from EDMCLogging import get_plugin_logger
+# from EDMCLogging import get_plugin_logger
 from config import config
+from inara_progress.progresslog import get_progress_log
 
-logger = get_plugin_logger(plugin_name)
+# logger = get_plugin_logger(plugin_name)
 
 
 class This:
@@ -30,6 +31,7 @@ class This:
 
 
 this = This()
+LOG = get_progress_log()
 
 
 """
@@ -212,6 +214,16 @@ class SellDateDied(Base):
     sell_typ2: Mapped[str] = mapped_column(default='')
 
 
+class Bounty(Base):
+    __tablename__ = 'bounty'
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    type_bond: Mapped[str] = mapped_column(default='')
+    faction: Mapped[str] = mapped_column(default='')    
+    reward: Mapped[int] = mapped_column(default='0')
+    count: Mapped[int] = mapped_column(default='0')
+
+
 def run_statement(engine: Engine, statement: Executable) -> Result:
     """
     Execute a SQLAlchemy statement. Creates a fresh connection, commits, and closes the connection.
@@ -258,7 +270,8 @@ def shutdown() -> None:
         this.sql_session.close()
         this.sql_engine.dispose()
     except Exception as ex:
-        logger.error('Error during cleanup commit', exc_info=ex)
+        LOG.log('Error during cleanup commit', "INFO")
+        # logger.error('Error during cleanup commit', exc_info=ex)
 
 
 def get_session() -> Session:
@@ -432,11 +445,18 @@ def get_planet_biosaa_count() -> int:
 
 def check_system(system_id: int, system_name: str, pos_system: list[float], add_pos: bool = False) -> bool:
     system_check = True
-    data: SystemList = this.sql_session.scalar(select(SystemList).where(SystemList.system_id == system_id))
+    data: SystemList = this.sql_session.scalar(select(SystemList).where(SystemList.system_id == system_id)
+                                                                 .where(SystemList.system_name == system_name))
     if not data:
-        data = SystemList(system_id=system_id, system_name=system_name)
-        this.sql_session.add(data)
-        system_check = False
+        data: SystemList = this.sql_session.scalar(select(SystemList).where(SystemList.system_id == system_id))
+        if data:
+            stmt = update(SystemList).where(SystemList.system_id == system_id).values(system_name=system_name)
+            this.sql_session.execute(stmt)
+            system_check = True
+        else:
+            data = SystemList(system_id=system_id, system_name=system_name)
+            this.sql_session.add(data)
+            system_check = False
     if add_pos:
         data.system_pos_x = pos_system[0]
         data.system_pos_y = pos_system[1]
@@ -474,13 +494,15 @@ def name_planet(system_id: int, planet_id: int) -> str:
     return 'id {}'.format(str(planet_id))
 
 
-def thargoid_add(thargoid_time: str, thargoid_name: str, thargoid_reward: int):
-    data: ThargoidList = this.sql_session.scalar(select(ThargoidList)
-                                                 .where(ThargoidList.thargoid_time == thargoid_time))
-    if not data:
-        data = ThargoidList(thargoid_time=thargoid_time, thargoid_name=thargoid_name, thargoid_reward=thargoid_reward)
-        this.sql_session.add(data)
-        this.sql_session.commit()
+def thargoid_add(thargoid_time: str, thargoid_name: str, thargoid_reward: int) -> bool:
+    # data: ThargoidList = this.sql_session.scalar(select(ThargoidList)
+    #                                             .where(ThargoidList.thargoid_time == thargoid_time))
+    # if not data:
+    data = ThargoidList(thargoid_time=thargoid_time, thargoid_name=thargoid_name, thargoid_reward=thargoid_reward)
+    this.sql_session.add(data)
+    this.sql_session.commit()
+    return True
+    # return False
 
 
 def get_thargoid_count() -> int:
@@ -511,9 +533,17 @@ def get_market_count() -> int:
 
 
 def set_trade(tr_time: str, market_id: int, tr_price: int):
-    data = TradeList(tr_time=tr_time, market_id=market_id, tr_price=tr_price)
-    this.sql_session.add(data)
-    this.sql_session.commit()
+    """
+    data: TradeList = this.sql_session.scalar(select(TradeList).where(TradeList.tr_time == tr_time)
+                                                               .where(TradeList.market_id == market_id)
+                                                               .where(TradeList.tr_price == tr_price)
+                                              )
+    if not data:
+    """    
+    if True:
+        data = TradeList(tr_time=tr_time, market_id=market_id, tr_price=tr_price)
+        this.sql_session.add(data)
+        this.sql_session.commit()
 
  
 def get_trade_profit() -> int:
@@ -691,3 +721,61 @@ def export_bio_lost(stamp_time: datetime) -> None:
                          data.planet_id, name_planet(data.system_id, data.planet_id),
                          data.bio_name, data.bio_variant, data.bio_cost, data.bio_codex)
         file.close()
+
+
+def add_bounty(type_bond: str, faction: str, reward: int):
+    data = None
+    if faction != '':
+        data = find_faction_type(faction,type_bond)   # wariant z ta sama frakcja combat i onfoot rozpoznanie
+    if data and (data.type_bond == type_bond):
+        count = data.count + 1
+        reward_new = data.reward + reward
+        stmt = (update(Bounty).where(Bounty.faction == data.faction)
+                              .where(Bounty.type_bond == type_bond)
+                              .values(count=count, reward=reward_new)
+                )
+        this.sql_session.execute(stmt)
+    else:
+        data = Bounty(type_bond=type_bond, faction=faction, count=1, reward=reward)
+        this.sql_session.add(data)
+    this.sql_session.commit()    
+
+
+def find_faction(faction: str) -> Bounty:
+   return this.sql_session.scalar(select(Bounty).where(Bounty.faction == faction)) 
+
+
+def find_faction_type(faction: str, type_bond: str) -> Bounty:
+   return this.sql_session.scalar(select(Bounty).where(Bounty.faction == faction).where(Bounty.type_bond == type_bond)) 
+
+
+def find_amount(amount: int) -> Bounty:
+    data = this.sql_session.scalar(select(Bounty).where(Bounty.reward == amount))
+    if not data:
+        data = this.sql_session.scalar(select(Bounty).where(Bounty.reward == (amount + 1)))
+    return data 
+
+
+def find_type_bounty(amount: int) -> Bounty:
+   return this.sql_session.scalar(select(Bounty).where(Bounty.type_bond == amount)) 
+
+
+def delete_bounty(data: Bounty):
+    stmt = (delete(Bounty).where(Bounty.faction == data.faction)
+                          .where(Bounty.reward == data.reward)
+                          .where(Bounty.type_bond == data.type_bond)
+            )
+    this.sql_session.execute(stmt)
+    this.sql_session.commit()   
+
+
+def get_bounty_count() -> int:
+    return this.sql_session.query(func.count(Bounty.type_bond).filter(Bounty.type_bond == 'bounty')).scalar()
+    
+
+def get_faction_count(faction: str) -> int:
+    return this.sql_session.query(func.count(Bounty.faction).filter(Bounty.faction == faction)).scalar()
+ 
+
+def clear_bounty():
+    this.sql_session.query(Bounty).delete()
