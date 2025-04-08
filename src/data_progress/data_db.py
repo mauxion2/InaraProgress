@@ -2,6 +2,7 @@
 
 import datetime
 import os
+import csv
 # from typing import List
 from typing import Optional
 from sqlalchemy import Engine, create_engine, Executable, Result, MetaData  # , ForeignKey
@@ -37,7 +38,6 @@ LOG = get_progress_log()
 """
 Define the SQLAlchemy Schemas
 """
-
 
 class Base(DeclarativeBase):
     pass
@@ -246,6 +246,7 @@ def init() -> None:
     if not this.sql_engine:
 
         engine_path = config.app_dir_path / 'dataprogress.db'
+        csv_path = config.default_plugin_dir_path / 'EDMC_InaraProgress' / 'data_progress' / 'bio_list_cost.csv'
 
         # Set up engine and construct DB
 
@@ -254,6 +255,14 @@ def init() -> None:
         run_statement(this.sql_engine, insert(Metadata).values(key='version', value=database_version)
                       .on_conflict_do_update(index_elements=['key'], set_=dict(value=database_version)))
         this.sql_session = scoped_session(sessionmaker(bind=this.sql_engine))
+
+        if this.sql_session.query(func.count(BioListCost.id)).scalar() < 1:
+            with open(csv_path) as csv_file:
+                csv_read = csv.DictReader(csv_file, delimiter=',')
+                record = [BioListCost(**row) for row in csv_read]
+                this.sql_session.add_all(record)
+                this.sql_session.commit()
+
     return
 
 
@@ -369,7 +378,11 @@ def set_setting_f(key: str, value: float):
 def get_setting(key: str) -> int:
     data: Settings = this.sql_session.scalar(select(Settings).where(Settings.key == key))
     if not data:
-        data = Settings(key=key, value='0')
+        if key == "InaraProgress_timestamp_last":
+            value = '2003-01-01 01:00:00'
+        else:
+            value = '0'
+        data = Settings(key=key, value=value)
         this.sql_session.add(data)
         this.sql_session.commit()
     return data.value
