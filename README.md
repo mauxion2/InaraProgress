@@ -17,10 +17,6 @@ Allows tracking of Elite Dangrous ranks and [INARA](https://inara.cz/) awards.
  *  Download the `latest release` of both InaraProgress and dataprogress.db
  * Extract the `.zip` archives that you downloaded into the EDMC `plugins` folder 
  
- * A `dataprogress.db` file is saved to the primary EDMC data storage directory, where plugins are installed.
-
-     On Windows this is generally located at `%LOCALAPPDATA%\EDMarketConnector\dataprogress.db`.
-
  * Install the [EDMCOverlay](https://github.com/inorton/EDMCOverlay) plugin for overlay support
  * Start or restart EDMC to register the plugin and first run parsing Journal logs in plugin settings
 
