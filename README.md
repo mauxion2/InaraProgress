@@ -7,7 +7,7 @@ Allows tracking of Elite Dangrous ranks and [INARA](https://inara.cz/) awards.
 [Overlay](https://github.com/inorton/EDMCOverlay) also show unsold Biological samples and bounties, combat bonds, on-foot combat bonds.
 
 # Image
-<img src="InaraProgress_2.jpg">
+<img src="InaraProgress_3.jpg">
 
 <img src="Titan Progress.jpg">
 
