@@ -1,3 +1,6 @@
+Referal program Star Citizen [STAR-7RRZ-FF22](https://www.robertsspaceindustries.com/enlist?referral=STAR-7RRZ-FF22) 
+For using the code during registration, you will receive 50,000 UEC to use in the game.
+
 # InaraProgress
 
 Plugin for EDMC  [Market Connector](https://github.com/EDCD/EDMarketConnector/wiki)
